@@ -22,6 +22,7 @@ from matraix.launch_env import (
 from matraix.job_results import (
     collect_job_results,
     format_csv_report,
+    format_html_report,
     format_json_report,
     format_text_report,
     parse_formats,
@@ -216,6 +217,7 @@ def _cmd_results(args: argparse.Namespace) -> None:
         "text": format_text_report,
         "json": format_json_report,
         "csv": format_csv_report,
+        "html": format_html_report,
     }
 
     if args.output == "-":
@@ -232,7 +234,7 @@ def _cmd_results(args: argparse.Namespace) -> None:
         else:
             output_path = output_path.resolve()
         single_file = len(formats) == 1 and (
-            output_path.suffix.lower() in {".txt", ".md", ".json", ".csv"}
+            output_path.suffix.lower() in {".txt", ".md", ".json", ".csv", ".html"}
             or not output_path.exists()
         )
         if single_file and not output_path.is_dir():
@@ -242,7 +244,7 @@ def _cmd_results(args: argparse.Namespace) -> None:
             return
         output_path.mkdir(parents=True, exist_ok=True)
         for fmt in formats:
-            suffix = {"text": "txt", "json": "json", "csv": "csv"}[fmt]
+            suffix = {"text": "txt", "json": "json", "csv": "csv", "html": "html"}[fmt]
             target = output_path / f"{report.job_name}.results.{suffix}"
             target.write_text(writers[fmt](report), encoding="utf-8")
             print(f"matraix results: wrote {target}", file=sys.stderr)
@@ -359,7 +361,8 @@ def main(argv: list[str] | None = None) -> None:
             "Deterministic job ledger + type-aware outcome lens for Survey, "
             "Chat, Web, and OS-app jobs. Reads jobs/<job>/ result.json, "
             "verifier/structured_output.json, and known artifacts. Default "
-            "path never calls another model. Use --format json,csv for export."
+            "path never calls another model. Use --format json,csv,html for export. "
+            "Synthetic outputs are not human research."
         ),
     )
     results_parser.add_argument(
@@ -369,7 +372,7 @@ def main(argv: list[str] | None = None) -> None:
     results_parser.add_argument(
         "--format",
         default="text",
-        help="Comma-separated formats: text,json,csv (default: text)",
+        help="Comma-separated formats: text,json,csv,html (default: text)",
     )
     results_parser.add_argument(
         "--group-by",

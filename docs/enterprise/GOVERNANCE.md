@@ -53,11 +53,12 @@ Simulation is for **hypotheses and potential failures**. Reports must include:
 - Recommended human validation
 - A statement that synthetic-user metrics are not equivalent to employee or customer research
 
-Phase 6 evaluation bundles always set `synthetic_equivalent_to_human_research: false`
-and `recommended_human_validation: true`. LLM judges are supplemental notes and
+Phase 6 evaluation bundles and Phase 8 executive reports always set
+`synthetic_equivalent_to_human_research: false` and
+`recommended_human_validation: true`. LLM judges are supplemental notes and
 never the pass/fail authority. Do not present `/evaluation` JSON, hierarchical
-metrics, or sandbox completions as a substitute for human research. See
-[telemetry.md](telemetry.md).
+metrics, sandbox completions, or `/report` exports as a substitute for human
+research. See [telemetry.md](telemetry.md) and [reporting.md](reporting.md).
 
 ## Audit
 

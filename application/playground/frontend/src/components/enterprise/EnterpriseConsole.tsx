@@ -5,6 +5,7 @@ import {
   FALLBACK_MANIFEST,
   HUMAN_VALIDATION_NOTE,
   SYNTHETIC_DISCLAIMER,
+  downloadEnterpriseReport,
   enterpriseFetch,
   readEnterpriseSettings,
   writeEnterpriseSettings,
@@ -86,7 +87,9 @@ export function EnterpriseConsole({
     else if (active === "personas") void loadList("/api/v1/personas");
     else if (active === "experiments") void loadList("/api/v1/experiments");
     else if (active === "models") void loadList("/api/v1/models/catalog");
-    else if (active === "evaluations" || active === "analytics") {
+    else if (active === "evaluations") {
+      void loadList("/api/v1/executions");
+    } else if (active === "analytics") {
       void loadList("/api/v1/executions");
     }
   }, [active, loadList, settings.tenantId, settings.token, settings.base]);
@@ -129,6 +132,17 @@ export function EnterpriseConsole({
         trace_id: execution.result?.trace_id,
         synthetic_equivalent_to_human_research: false,
       });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const loadReport = async (id: string) => {
+    setError(null);
+    try {
+      const report = await enterpriseFetch(`/api/v1/executions/${id}/report?format=json`);
+      onExecutionChange(id);
+      setPayload(report);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
@@ -286,13 +300,59 @@ export function EnterpriseConsole({
                           ? "bg-primary text-on-primary"
                           : "bg-surface-high text-text-variant"
                       }`}
-                      onClick={() => void loadArtifacts(record.id)}
+                      onClick={() =>
+                        void (active === "analytics"
+                          ? loadReport(record.id)
+                          : loadArtifacts(record.id))
+                      }
                     >
                       {record.id.slice(0, 18)}… {record.status}
                     </button>
                   );
                 })}
               </div>
+            )}
+
+          {active === "analytics" &&
+            payload &&
+            !Array.isArray(payload) &&
+            typeof payload === "object" &&
+            "success" in (payload as object) && (
+              <section className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+                {(["success", "risk", "cost", "confidence"] as const).map((key) => (
+                  <div
+                    key={key}
+                    className="rounded-xl border border-outline-dim bg-surface p-3"
+                  >
+                    <h2 className="text-[13px] font-semibold capitalize">{key}</h2>
+                    <pre className="mt-1 overflow-auto text-[11px]">
+                      {JSON.stringify((payload as Record<string, unknown>)[key], null, 2)}
+                    </pre>
+                  </div>
+                ))}
+                <p className="md:col-span-2 text-[12px] text-text-variant">
+                  Export:{" "}
+                  {executionId &&
+                    (["json", "csv", "html"] as const).map((fmt) => (
+                      <button
+                        key={fmt}
+                        type="button"
+                        className="mr-2 underline"
+                        onClick={() =>
+                          void downloadEnterpriseReport(
+                            `/api/v1/executions/${executionId}/report?format=${fmt}`,
+                            `enterprise-report.${fmt}`,
+                          ).catch((err) =>
+                            setError(err instanceof Error ? err.message : String(err)),
+                          )
+                        }
+                      >
+                        {fmt}
+                      </button>
+                    ))}
+                  · synthetic_equivalent_to_human_research: false
+                </p>
+              </section>
             )}
 
           {active === "settings" && (

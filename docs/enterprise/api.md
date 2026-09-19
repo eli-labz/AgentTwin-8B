@@ -1,6 +1,6 @@
 # Enterprise API (`/api/v1`)
 
-Phase 1–7 control-plane skeleton. This is **not** the Playground API
+Phase 1–8 control-plane skeleton. This is **not** the Playground API
 (`docs/application/playground-api.md`). Harbor jobs and `matraix run` stay
 unchanged.
 
@@ -83,6 +83,8 @@ Equivalent: `uvicorn matraix.enterprise.api:app --port 8090`.
 | `POST` | `/api/v1/executions/{id}/evaluate` | required | Re-run evaluation SDK (LLM judge optional / supplemental) |
 | `GET` | `/api/v1/failures` | required | Failure taxonomy artifacts; optional `?execution_id=` |
 | `GET` | `/api/v1/console/manifest` | no | Nav, wizard steps, synthetic≠human limitation |
+| `GET` | `/api/v1/executions/{id}/report` | required | Executive report; `?format=json\|csv\|html` |
+| `GET` | `/api/v1/experiments/{id}/report` | required | Experiment rollup report; same formats |
 | `GET` | `/console` | no | Standalone console HTML |
 
 ### Create tenant
@@ -224,6 +226,16 @@ always set `synthetic_equivalent_to_human_research: false` — synthetic
 outputs are **not** human research. LLM judges, if requested on
 `POST .../evaluate`, are supplemental and never flip pass/fail. See
 [telemetry.md](telemetry.md).
+
+### Executive reports
+
+`GET .../report?format=json|csv|html` builds `EnterpriseExecutiveReport.v1`
+from Phase 6 artifacts (no extra migration). Every payload includes
+limitations, `recommended_human_validation: true`, and
+`synthetic_equivalent_to_human_research: false`. HTML is PDF-ready
+(`@page A4`). Foreign tenant ids return `404`. See
+[reporting.md](reporting.md). `matraix results` remains the Harbor job-tree
+export (now also `html`).
 
 ## Persistence
 

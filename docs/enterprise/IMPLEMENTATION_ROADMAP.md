@@ -76,7 +76,7 @@ Each phase must leave the repository **runnable**: `matraix smoke`, existing Har
 
 **Exit:** a result traces to execution, persona, model, seed, code version.
 
-## Phase 7 — Enterprise console *(this change)*
+## Phase 7 — Enterprise console *(accepted)*
 
 - Evolve Playground with an Enterprise mode: Overview, Organizations, Populations, Personas, Experiments, Tasks, Environments, Models, Evaluations, Analytics, Governance, Audit, Infrastructure, Settings ([console.md](console.md))
 - Experiment wizard: Population → Scenario → Task → Environment → AI System → Metrics → Governance → Scale → Cost → Launch
@@ -86,12 +86,13 @@ Each phase must leave the repository **runnable**: `matraix smoke`, existing Har
 
 **Exit:** an admin can drive Phase 1–3 flows without YAML-first.
 
-## Phase 8 — Reporting and executive analytics
+## Phase 8 — Reporting and executive analytics *(this change)*
 
-- Executive dashboard (success, risk, subgroup, cost, confidence) with drill-down
-- Report generator: required sections including limitations + recommended human validation
-- Export JSON / CSV / HTML / PDF-ready HTML
-- Extend existing `matraix results` and Playground PDF — do not discard them
+- Executive views from Phase 6 artifacts: success, risk, subgroup, cost, confidence, drill-down ([reporting.md](reporting.md))
+- Report generator always includes limitations + recommended human validation; `synthetic_equivalent_to_human_research: false`
+- Export JSON / CSV / PDF-ready HTML via `/api/v1/executions/{id}/report` and `/api/v1/experiments/{id}/report`
+- Console Analytics (Playground Enterprise + `/console`) consumes those reports
+- `matraix results` gains `html` plus limitation notes; Playground jsPDF footer states synthetic ≠ human research
 
 **Exit:** one experiment produces an exportable report with reproducibility metadata.
 
@@ -125,4 +126,4 @@ Each phase must leave the repository **runnable**: `matraix smoke`, existing Har
 
 ## Next implementation target (after this PR)
 
-**Phase 8:** reporting and executive analytics — success / risk / subgroup / cost / confidence dashboard with drill-down; report generator (limitations + recommended human validation required); export JSON / CSV / HTML / PDF-ready HTML. Extend `matraix results` and Playground PDF. Never present synthetic outputs as human research.
+**Phase 9:** security and governance hardening — OIDC / SSO / SCIM patterns, RBAC+ABAC, append-only audit log (separable from telemetry), CSRF / secure cookies / rate limits, dependency scanning, least privilege, and governance reviews for ingestion / retention / model-provider exposure. Tenant isolation must remain demonstrated on API + storage. See [GOVERNANCE.md](GOVERNANCE.md) and [SECURITY.md](../../SECURITY.md).

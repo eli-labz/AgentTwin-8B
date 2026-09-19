@@ -147,7 +147,47 @@
           };
           return;
         }
-        if (state.page === "evaluations" || state.page === "analytics") {
+        if (state.page === "analytics") {
+          const execs = await api("/api/v1/executions");
+          const id = (state.lastExecution && state.lastExecution.id) || (execs[0] && execs[0].id);
+          let report = null;
+          if (id) {
+            report = await api(`/api/v1/executions/${id}/report?format=json`);
+          }
+          const cards = report ? ["success","risk","cost","confidence"].map((key) =>
+            `<section class="card"><h2>${key}</h2><pre>${JSON.stringify(report[key], null, 2)}</pre></section>`
+          ).join("") : "<p class='muted'>Launch an experiment to generate a report.</p>";
+          const exports = id ? ["json","csv","html"].map((fmt) =>
+            `<button class="ghost" data-fmt="${fmt}">${fmt}</button>`
+          ).join(" ") : "";
+          main.innerHTML = `<h1>Analytics</h1>${disclaimer()}
+            <div class="card"><p>Executions: ${execs.length}${id ? " · selected " + id : ""}</p>
+            <p>synthetic_equivalent_to_human_research: <strong>false</strong></p>
+            <p>recommended_human_validation: <strong>true</strong></p>
+            <p>Export: ${exports || "—"}</p></div>
+            ${cards}
+            <section class="card"><h2>Limitations</h2><pre>${JSON.stringify(report && report.limitations, null, 2)}</pre></section>`;
+          if (id) {
+            main.querySelectorAll("[data-fmt]").forEach((btn) => {
+              btn.onclick = async () => {
+                const fmt = btn.getAttribute("data-fmt");
+                const res = await fetch(
+                  state.base.replace(/\/$/, "") + `/api/v1/executions/${id}/report?format=${fmt}`,
+                  { headers: headers() }
+                );
+                if (!res.ok) throw new Error(res.status + " report");
+                const blob = await res.blob();
+                const a = document.createElement("a");
+                a.href = URL.createObjectURL(blob);
+                a.download = "enterprise-report." + fmt;
+                a.click();
+                URL.revokeObjectURL(a.href);
+              };
+            });
+          }
+          return;
+        }
+        if (state.page === "evaluations") {
           const execs = await api("/api/v1/executions");
           const id = (state.lastExecution && state.lastExecution.id) || (execs[0] && execs[0].id);
           let evalBody = null, metrics = null, failure = [];
@@ -156,7 +196,7 @@
             metrics = await api(`/api/v1/executions/${id}/metrics`);
             failure = await api(`/api/v1/failures?execution_id=${id}`);
           }
-          main.innerHTML = `<h1>${state.page === "analytics" ? "Analytics" : "Evaluations"}</h1>${disclaimer()}
+          main.innerHTML = `<h1>Evaluations</h1>${disclaimer()}
             <div class="card"><p>Executions: ${execs.length}${id ? " · selected " + id : ""}</p>
             <p>synthetic_equivalent_to_human_research: <strong>false</strong></p>
             <pre>${JSON.stringify({ evaluation: evalBody, hierarchy: metrics && metrics.hierarchy, failure }, null, 2)}</pre></div>`;

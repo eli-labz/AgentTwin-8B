@@ -13,7 +13,7 @@ from typing import Annotated, Any
 
 from fastapi import FastAPI, Header, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from pydantic import BaseModel, Field
 
 from matraix.enterprise.console import console_manifest
@@ -76,6 +76,7 @@ from matraix.enterprise.population_builder import (
 )
 from matraix.enterprise.repositories import EnterpriseRepository
 from matraix.enterprise.observability import evaluation_from_stored
+from matraix.enterprise.reporting import render_report, report_from_runtime
 from matraix.enterprise.runtime import EnterpriseRuntime, worker_catalog
 from matraix.enterprise.store import (
     create_tenant_with_default_org,
@@ -435,6 +436,10 @@ def create_enterprise_app(
             {
                 "name": "console",
                 "description": "Enterprise console manifest (nav + wizard; synthetic ≠ human research)",
+            },
+            {
+                "name": "reports",
+                "description": "Executive reports and exports (synthetic ≠ human research)",
             },
         ],
     )
@@ -1152,6 +1157,48 @@ def create_enterprise_app(
         resolved = ExecutionId(tenant, execution_id) if execution_id else None
         items = _runtime().data.list_artifacts(tenant, execution_id=resolved)
         return [item.content for item in items if item.kind == "failure"]
+
+    def _report_response(report, fmt: str):
+        try:
+            body, media = render_report(report, fmt)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        if media.startswith("text/html"):
+            return HTMLResponse(body)
+        if media.startswith("text/csv"):
+            return Response(content=body, media_type=media)
+        return JSONResponse(content=report.to_dict())
+
+    @app.get("/api/v1/executions/{execution_id}/report", tags=["reports"])
+    def get_execution_report(
+        execution_id: str,
+        fmt: Annotated[str, Query(alias="format")] = "json",
+        x_tenant_id: Annotated[str | None, Header(alias=TENANT_HEADER)] = None,
+    ):
+        tenant = _require_tenant_header(x_tenant_id)
+        resolved, _record = _require_execution(tenant, execution_id)
+        return _report_response(
+            report_from_runtime(
+                _runtime(), tenant_id=tenant, execution_id=resolved
+            ),
+            fmt,
+        )
+
+    @app.get("/api/v1/experiments/{experiment_id}/report", tags=["reports"])
+    def get_experiment_report(
+        experiment_id: str,
+        fmt: Annotated[str, Query(alias="format")] = "json",
+        x_tenant_id: Annotated[str | None, Header(alias=TENANT_HEADER)] = None,
+    ):
+        tenant = _require_tenant_header(x_tenant_id)
+        return _report_response(
+            report_from_runtime(
+                _runtime(),
+                tenant_id=tenant,
+                experiment_id=ExperimentId(tenant, experiment_id),
+            ),
+            fmt,
+        )
 
     return app
 

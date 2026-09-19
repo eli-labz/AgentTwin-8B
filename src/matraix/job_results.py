@@ -8,6 +8,7 @@ OS-app) produce ``MatraixJobResults.v1``.
 from __future__ import annotations
 
 import csv
+import html
 import io
 import json
 from collections import Counter, defaultdict
@@ -18,6 +19,14 @@ from typing import Any, Iterable
 
 
 SCHEMA_VERSION = "MatraixJobResults.v1"
+
+SYNTHETIC_RESULT_LIMITATION = (
+    "Synthetic persona outputs are simulation parameters, not equivalent to "
+    "human research, usability testing, or employee consultation."
+)
+HUMAN_VALIDATION_NOTE = (
+    "Recommended human validation before operational or research claims."
+)
 
 _SKIP_DIR_NAMES = frozenset(
     {
@@ -157,6 +166,12 @@ class JobResultsReport:
             "groupBy": list(self.group_by),
             "groupedDistributions": self.grouped_distributions,
             "notes": list(self.notes),
+            "limitations": [
+                SYNTHETIC_RESULT_LIMITATION,
+                HUMAN_VALIDATION_NOTE,
+            ],
+            "recommendedHumanValidation": True,
+            "syntheticEquivalentToHumanResearch": False,
         }
         return payload
 
@@ -847,6 +862,9 @@ def collect_job_results(
     notes: list[str] = [
         "Built from jobs/<job>/ on disk — no additional model calls.",
         "Ledger uses result.json; lens prefers verifier/structured_output.json.",
+        SYNTHETIC_RESULT_LIMITATION,
+        HUMAN_VALIDATION_NOTE,
+        "synthetic_equivalent_to_human_research: false",
     ]
     job_result = _read_json(job_dir / "result.json") or {}
     stats = job_result.get("stats") if isinstance(job_result.get("stats"), dict) else {}
@@ -984,6 +1002,8 @@ def format_text_report(report: JobResultsReport) -> str:
     if lens:
         lines.append(f"  - lens source: {lens.source}")
     lines.append(f"  - schema: {report.schema_version}")
+    lines.append("  - synthetic_equivalent_to_human_research: false")
+    lines.append(f"  - {HUMAN_VALIDATION_NOTE}")
     return "\n".join(lines) + "\n"
 
 
@@ -1055,17 +1075,66 @@ def format_csv_report(report: JobResultsReport) -> str:
             value = trial.signals.get(key, "")
             row[f"signal_{key}"] = "" if value is None else value
         writer.writerow(row)
+    writer.writerow({})
+    writer.writerow(
+        {
+            "job_name": report.job_name,
+            "error": "LIMITATION",
+            "artifact_paths": SYNTHETIC_RESULT_LIMITATION,
+        }
+    )
+    writer.writerow(
+        {
+            "job_name": report.job_name,
+            "error": "HUMAN_VALIDATION",
+            "artifact_paths": HUMAN_VALIDATION_NOTE,
+        }
+    )
     return buf.getvalue()
+
+
+def format_html_report(report: JobResultsReport) -> str:
+    """PDF-ready HTML. Does not replace Playground's jsPDF batch report."""
+    payload = report.to_dict()
+    title = html.escape(report.job_name or "job")
+    notes = "".join(f"<li>{html.escape(note)}</li>" for note in report.notes)
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>MatrAIx results — {title}</title>
+  <style>
+    @page {{ size: A4; margin: 16mm; }}
+    body {{ font: 13px/1.45 system-ui, sans-serif; margin: 24px; }}
+    .banner {{ background: #fff3cd; border: 1px solid #f0c36d; padding: 10px; }}
+    pre {{ white-space: pre-wrap; }}
+    @media print {{ .noprint {{ display: none; }} }}
+  </style>
+</head>
+<body>
+  <h1>MatrAIx job results</h1>
+  <p>Job {title} · app {html.escape(report.app_type)}</p>
+  <div class="banner">
+    <strong>Limitations — not human research.</strong>
+    <p>syntheticEquivalentToHumanResearch: false</p>
+    <p>{html.escape(HUMAN_VALIDATION_NOTE)}</p>
+    <ul>{notes}</ul>
+  </div>
+  <pre>{html.escape(json.dumps(payload, indent=2))}</pre>
+  <p class="noprint">Print this page for a PDF-ready export.</p>
+</body>
+</html>
+"""
 
 
 def parse_formats(raw: str | None) -> list[str]:
     if not raw or not raw.strip():
         return ["text"]
     formats = [part.strip().lower() for part in raw.split(",") if part.strip()]
-    allowed = {"text", "json", "csv"}
+    allowed = {"text", "json", "csv", "html"}
     unknown = [fmt for fmt in formats if fmt not in allowed]
     if unknown:
         raise ValueError(
-            f"unsupported format(s): {', '.join(unknown)} (allowed: text,json,csv)"
+            f"unsupported format(s): {', '.join(unknown)} (allowed: text,json,csv,html)"
         )
     return formats or ["text"]

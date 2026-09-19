@@ -6,9 +6,12 @@ import json
 from pathlib import Path
 
 from matraix.job_results import (
+    HUMAN_VALIDATION_NOTE,
     SCHEMA_VERSION,
+    SYNTHETIC_RESULT_LIMITATION,
     collect_job_results,
     format_csv_report,
+    format_html_report,
     format_json_report,
     format_text_report,
     parse_formats,
@@ -294,12 +297,25 @@ def test_formatters_include_usage_and_answers(tmp_path: Path) -> None:
     csv_text = format_csv_report(report)
     assert "answer_q0" in csv_text
     assert "option_a" in csv_text
+    assert "LIMITATION" in csv_text
+    assert SYNTHETIC_RESULT_LIMITATION in csv_text
+    assert "HUMAN_VALIDATION" in csv_text
+    html = format_html_report(report)
+    assert "not human research" in html.lower()
+    assert "syntheticEquivalentToHumanResearch: false" in html
+    assert HUMAN_VALIDATION_NOTE in html
+    assert "synthetic_equivalent_to_human_research: false" in text
+    assert HUMAN_VALIDATION_NOTE in text
+    assert payload["recommendedHumanValidation"] is True
+    assert payload["syntheticEquivalentToHumanResearch"] is False
+    assert SYNTHETIC_RESULT_LIMITATION in payload["limitations"]
 
 
 def test_parse_formats_rejects_unknown() -> None:
     assert parse_formats("json,csv") == ["json", "csv"]
+    assert parse_formats("html") == ["html"]
     try:
-        parse_formats("html")
+        parse_formats("xlsx")
         assert False, "expected ValueError"
     except ValueError as exc:
-        assert "html" in str(exc)
+        assert "xlsx" in str(exc)

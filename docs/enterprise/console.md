@@ -29,16 +29,19 @@ Governance → Scale → Cost → Launch.
 Launch creates an `Experiment` and runs the **local sandbox** worker. It does
 not construct `harbor.Job`. Default policy remains `SANDBOX_ONLY`.
 
-## Phase 6 artifacts
+## Phase 6 artifacts and Phase 8 reports
 
-Evaluations / Analytics load `trace`, `metrics`, `evaluation`, and `failure`
-from `/api/v1`. Every page shows:
+Evaluations load `trace`, `metrics`, `evaluation`, and `failure` from
+`/api/v1`. Analytics loads `GET /api/v1/executions/{id}/report` (success,
+risk, cost, confidence) and offers JSON / CSV / HTML downloads that send
+the tenant header. Every page shows:
 
 **Synthetic persona outputs are not equivalent to human research.**
 `synthetic_equivalent_to_human_research: false`. Human validation is
 recommended.
 
-Tasks, Environments, Governance, Audit, and Infrastructure are placeholders.
+See [reporting.md](reporting.md). Tasks, Environments, Governance, Audit,
+and Infrastructure are placeholders.
 
 ## Auth and CORS
 

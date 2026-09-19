@@ -1,6 +1,6 @@
 # Target Architecture — AgentTwin Enterprise
 
-This is the target modular platform. Phase 0 shipped **contracts and a tenant-scoped domain model**. Phase 1 added **persistence + `/api/v1`**. Phase 2 added **org-graph edges and a population-shape builder**. Phase 3 added **experiment launch records** mapped onto Harbor job YAML. Phase 4 added the **model and policy gateways** beside LiteLLM. Phase 5 added **control / data / execution planes** and a local sandbox worker. Phase 6 added **OTel-shaped traces, hierarchical metrics, a failure taxonomy, and a deterministic-first evaluation SDK**. Phase 7 adds a **Playground-hosted enterprise console** (nav + experiment wizard + Phase 6 artifact views). Harbor, Playground, and the 1,290-dimension persona stack remain the simulation engines.
+This is the target modular platform. Phase 0 shipped **contracts and a tenant-scoped domain model**. Phase 1 added **persistence + `/api/v1`**. Phase 2 added **org-graph edges and a population-shape builder**. Phase 3 added **experiment launch records** mapped onto Harbor job YAML. Phase 4 added the **model and policy gateways** beside LiteLLM. Phase 5 added **control / data / execution planes** and a local sandbox worker. Phase 6 added **OTel-shaped traces, hierarchical metrics, a failure taxonomy, and a deterministic-first evaluation SDK**. Phase 7 added a **Playground-hosted enterprise console** (nav + experiment wizard + Phase 6 artifact views). Phase 8 adds **executive reports** (success / risk / subgroup / cost / confidence) with JSON / CSV / PDF-ready HTML exports that always carry limitations and recommended human validation. Harbor, Playground, and the 1,290-dimension persona stack remain the simulation engines.
 
 ## Layered platform
 
@@ -33,14 +33,14 @@ This is the target modular platform. Phase 0 shipped **contracts and a tenant-sc
 
 | Target layer | Current implementation (keep) | Enterprise contract (add) |
 |--------------|-------------------------------|---------------------------|
-| Experience | Playground UI, Harbor Viewer | Enterprise mode + `/console`: orgs, experiments, eval artifacts |
+| Experience | Playground UI, Harbor Viewer | Enterprise mode + `/console`: orgs, experiments, eval + Analytics reports |
 | Control plane | Playground API + job YAML | Tenant, population, experiment, policy APIs (`/api/v1`) |
 | Org twin | 1,290-dim persona + optional enterprise fields | Org graph + tenancy on every record |
 | Simulation runtime | Harbor `Job` / `Trial` / `BaseAgent` | Same runtime, tenant context on traces |
 | Task / environment | `application/tasks` + Harbor environments | Workflow contracts; sandboxed enterprise adapters |
 | Model gateway | LiteLLM + `provider_credentials` (unchanged) | `ModelProvider` / `ModelPolicy` / residency routing |
 | Policy / identity | Task network policy; Harbor GitHub OAuth | `evaluate_policy` decisions; RBAC+ABAC / OIDC later |
-| Telemetry | `JobResult`, structured_output, `matraix results` | OTel-shaped traces, hierarchical metrics, failure taxonomy, eval SDK |
+| Telemetry | `JobResult`, structured_output, `matraix results` | OTel-shaped traces, hierarchical metrics, failure taxonomy, eval SDK, executive reports |
 | Data / artifacts | `jobs/`, persona datasets, Parquet | Tenant-prefixed stores; encryption-ready |
 | Infrastructure | local / Modal / GKE / use.computer | `WorkerKind` + local sandbox worker; remote stubs |
 
@@ -118,7 +118,7 @@ Contracts are **interfaces**, not a rewrite. Phase 0 ships the first Python type
 4. Tenancy is enforced in the domain/store, not only in UI filters.
 5. Existing Harbor jobs remain runnable without a tenant (legacy path) until Phase 1 APIs wrap them.
 
-## Phase 0–7 slice actually implemented
+## Phase 0–8 slice actually implemented
 
 - Typed IDs and entities: `src/matraix/enterprise/`
 - `EnterpriseRepository` with in-memory (default) and SQLite backends
@@ -133,6 +133,7 @@ Contracts are **interfaces**, not a rewrite. Phase 0 ships the first Python type
 - EventBus + SimulationClock + optional WorldState (off by default)
 - OTel-shaped traces + hierarchical metrics + 12-class failure taxonomy + evaluation SDK (deterministic first; LLM judges supplemental)
 - Playground Enterprise mode + `GET /console` + wizard shell + Phase 6 artifact views (deep pages stubbed)
+- Executive reports from Phase 6 artifacts (`EnterpriseExecutiveReport.v1`); JSON / CSV / PDF-ready HTML; `matraix results` html + limitation notes
 - Tests under `tests/unit/enterprise`, `tests/multitenancy`, `tests/security`
 
-Not yet: Harbor filesystem tenancy, live LiteLLM adapter, wired Docker/K8s workers, executive dashboards / PDF reports, OIDC.
+Not yet: Harbor filesystem tenancy, live LiteLLM adapter, wired Docker/K8s workers, OIDC / RBAC, production packaging.

@@ -1,4 +1,4 @@
-"""AgentTwin Enterprise domain model (Phase 0–7).
+"""AgentTwin Enterprise domain model (Phase 0–8).
 
 This package is additive. It does not replace Harbor jobs, Playground, or the
 existing 1,290-dimension persona YAML schema. Enterprise fields are optional
@@ -10,8 +10,10 @@ edges, a population-shape builder, experiment launch records mapped onto
 Harbor job YAML (not a replacement for ``harbor.Job``), a
 provider-independent model gateway beside LiteLLM, control / data /
 execution planes with a local sandbox worker, telemetry / evaluation
-(synthetic outputs are not human research), and a Playground-hosted
-enterprise console (nav + experiment wizard + artifact views).
+(synthetic outputs are not human research), a Playground-hosted
+enterprise console (nav + experiment wizard + artifact views), and
+executive reports (JSON / CSV / PDF-ready HTML) that always carry
+limitations plus recommended human validation.
 """
 
 from matraix.enterprise.entities import (
@@ -137,6 +139,17 @@ from matraix.enterprise.metrics import (
 )
 from matraix.enterprise.console import CONSOLE_NAV, WIZARD_STEPS, console_manifest
 from matraix.enterprise.observability import record_execution_observability
+from matraix.enterprise.reporting import (
+    SCHEMA_VERSION as EXECUTIVE_REPORT_SCHEMA,
+    ExecutiveReport,
+    REQUIRED_LIMITATIONS,
+    build_executive_report,
+    format_report_csv,
+    format_report_html,
+    format_report_json,
+    render_report,
+    report_from_runtime,
+)
 from matraix.enterprise.telemetry import (
     FAILURE_CLASSES,
     FailureClass,
@@ -178,6 +191,8 @@ __all__ = [
     "estimate_experiment_cost",
     "evaluate_execution",
     "evaluate_policy",
+    "ExecutiveReport",
+    "EXECUTIVE_REPORT_SCHEMA",
     "EvaluationBundle",
     "EvaluationResult",
     "EvaluatorKind",
@@ -207,6 +222,13 @@ __all__ = [
     "MetricsRegistry",
     "AggregatedMetric",
     "record_execution_observability",
+    "render_report",
+    "report_from_runtime",
+    "REQUIRED_LIMITATIONS",
+    "build_executive_report",
+    "format_report_csv",
+    "format_report_html",
+    "format_report_json",
     "supplemental_llm_judge",
     "SYNTHETIC_METRIC_LIMITATION",
     "SpanRecord",

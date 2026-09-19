@@ -168,6 +168,10 @@ Control-plane **launch record** (`Experiment`, alias `EnterpriseExperiment`). De
 
 OTel-shaped traces (`InMemoryTracer`), hierarchical metrics (`MetricsRegistry`: step → enterprise), and `FailureClass` live in `matraix.enterprise.telemetry` / `metrics`. The evaluation SDK (`evaluate_execution`) uses deterministic verifiers as pass/fail authority; LLM judges are supplemental and never flip the result. Snapshots persist as tenant-scoped artifacts (`trace`, `metrics`, `evaluation`, `failure`). Synthetic outputs are **not** human research (`synthetic_equivalent_to_human_research: false`). See [telemetry.md](telemetry.md).
 
+### Executive reports
+
+`ExecutiveReport` (`matraix.enterprise.reporting`, schema `EnterpriseExecutiveReport.v1`) rolls Phase 6 artifacts into success, risk, subgroup, cost, and confidence views. `to_dict()` always sets `recommended_human_validation: true` and `synthetic_equivalent_to_human_research: false`. Exports are JSON, CSV, and PDF-ready HTML. Reports are generated on the fly (no extra migration). See [reporting.md](reporting.md).
+
 ## Persistence
 
 `EnterpriseRepository` is the contract. Two backends:

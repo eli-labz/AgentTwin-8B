@@ -52,6 +52,8 @@ def test_openapi_exposes_v1_paths() -> None:
     assert "/api/v1/executions/{execution_id}/evaluate" in paths
     assert "/api/v1/failures" in paths
     assert "/api/v1/console/manifest" in paths
+    assert "/api/v1/executions/{execution_id}/report" in paths
+    assert "/api/v1/experiments/{experiment_id}/report" in paths
     assert spec["info"]["title"] == "AgentTwin Enterprise API"
 
 
@@ -612,3 +614,21 @@ def test_execute_experiment_local_sandbox_and_isolation() -> None:
     )
     assert hidden_failures.status_code == 200
     assert hidden_failures.json() == []
+    hidden_report = client.get(
+        f"/api/v1/executions/{body['id']}/report",
+        headers={"X-Tenant-Id": bravo["id"]},
+    )
+    assert hidden_report.status_code == 404
+    hidden_exp_report = client.get(
+        f"/api/v1/experiments/{experiment_id}/report",
+        headers={"X-Tenant-Id": bravo["id"]},
+    )
+    assert hidden_exp_report.status_code == 404
+
+    own_report = client.get(
+        f"/api/v1/executions/{body['id']}/report?format=json",
+        headers=headers,
+    )
+    assert own_report.status_code == 200
+    assert own_report.json()["synthetic_equivalent_to_human_research"] is False
+    assert own_report.json()["recommended_human_validation"] is True

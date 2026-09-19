@@ -93,6 +93,28 @@ export async function enterpriseFetch<T>(
   return body as T;
 }
 
+export async function downloadEnterpriseReport(
+  path: string,
+  filename: string,
+): Promise<void> {
+  const settings = readEnterpriseSettings();
+  const headers = new Headers();
+  if (settings.tenantId) headers.set("X-Tenant-Id", settings.tenantId);
+  if (settings.token) headers.set("Authorization", `Bearer ${settings.token}`);
+  const url = `${settings.base.replace(/\/$/, "")}${path}`;
+  const response = await fetch(url, { headers });
+  if (!response.ok) {
+    throw new Error(`${response.status} ${path}`);
+  }
+  const blob = await response.blob();
+  const href = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = href;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(href);
+}
+
 export const FALLBACK_MANIFEST: EnterpriseManifest = {
   nav: [
     "Overview",

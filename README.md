@@ -69,10 +69,10 @@ See the [Handbook](docs/README.md) and [quickstart](docs/quickstart.md).
 
 ## Enterprise status (in progress)
 
-Phases **0–7** are on this branch as a **draft pull request**
+Phases **0–8** are on this branch as a **draft pull request**
 ([#1](https://github.com/eli-labz/AgentTwin-8B/pull/1)). They are not a
-finished production platform. Phases 8–10 (executive reporting, IAM
-hardening, packaging) are **not** done.
+finished production platform. Phases 9–10 (IAM hardening, packaging) are
+**not** done.
 
 | Phase | On this branch |
 |-------|----------------|
@@ -84,7 +84,8 @@ hardening, packaging) are **not** done.
 | 5 Runtime planes + local worker | Yes — remote Docker/K8s/queue/batch are **stubs** |
 | 6 Telemetry, metrics, evaluation | Yes — OTel-shaped traces; deterministic eval first |
 | 7 Enterprise console | Yes — Playground Enterprise mode + `/console`; deep pages stubbed |
-| 8–10 Reports, IAM, packaging | Not on this branch |
+| 8 Reporting + executive analytics | Yes — JSON/CSV/HTML reports; limitations + human validation required |
+| 9–10 IAM, packaging | Not on this branch |
 
 Python package: `matraix.enterprise`. HTTP: `/api/v1` (OpenAPI at `/docs` when
 the enterprise API is running). Default store is in-memory; set
@@ -96,10 +97,11 @@ the enterprise API is running). Default store is in-memory; set
   use requires an explicit tenant policy. `matraix run` defaults are unchanged.
 - **Synthetic personas are simulation parameters**, not psychological
   equivalents of employees or customers.
-- **Synthetic outputs are not human research.** Evaluation bundles set
-  `synthetic_equivalent_to_human_research: false` and recommend human
-  validation. Do not present sandbox completions or metrics as usability
-  tests, employee consultation, or customer research.
+- **Synthetic outputs are not human research.** Evaluation bundles and
+  executive reports set `synthetic_equivalent_to_human_research: false` and
+  recommend human validation. Do not present sandbox completions, metrics, or
+  `/report` exports as usability tests, employee consultation, or customer
+  research.
 - **No hard-coded secrets.** Optional `MATRIX_ENTERPRISE_API_TOKEN` and model
   keys come from the environment only.
 - The core domain stays **cloud-neutral** and **provider-independent**.

@@ -1,10 +1,10 @@
 # Telemetry, metrics, and evaluation
 
 Phase 6 adds **OpenTelemetry-shaped traces**, **hierarchical metrics**, a
-**failure taxonomy**, and a **deterministic-first evaluation SDK**. Dashboards
-are deferred to Phase 7–8; this slice persists JSON artifacts and exposes them
-on `/api/v1`. `matraix run` defaults are unchanged. Default policy remains
-`SANDBOX_ONLY`.
+**failure taxonomy**, and a **deterministic-first evaluation SDK**. Phase 7–8
+consume these artifacts in the console and executive reports. This slice
+persists JSON artifacts and exposes them on `/api/v1`. `matraix run` defaults
+are unchanged. Default policy remains `SANDBOX_ONLY`.
 
 No OpenTelemetry SDK, LiteLLM, or Harbor `Job` is imported. Span JSON uses the
 same field names an exporter would (`trace_id`, `span_id`, `resource_spans`,
@@ -94,9 +94,10 @@ summary onto `ExecutionRecord.result`. Artifacts of kinds `trace`, `metrics`,
 
 ## Dashboards
 
-No console charts in this phase. Phase 7 (enterprise console) and Phase 8
-(executive analytics) consume these artifacts. Until then, use `/docs` and the
-JSON endpoints above.
+Phase 7 console Analytics and Phase 8 executive reports consume these
+artifacts (`GET /api/v1/executions/{id}/report`). Reports always include
+limitations and recommended human validation. See [reporting.md](reporting.md)
+and [console.md](console.md).
 
 ## Modules
 
@@ -106,3 +107,4 @@ JSON endpoints above.
 | `matraix.enterprise.metrics` | Hierarchical registry + CI |
 | `matraix.enterprise.evaluation` | Deterministic + supplemental judge |
 | `matraix.enterprise.observability` | Wire snapshots for the local worker |
+| `matraix.enterprise.reporting` | Executive rollup + JSON/CSV/HTML (Phase 8) |

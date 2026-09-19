@@ -229,7 +229,7 @@ What exists today:
 - Per-trial `result.json`, verifier `structured_output.json`, agent logs, optional web traces / screenshots / os-app recordings.
 - Playground `llm_usage_view` + `packages/playground` `llm_usage.py` (OpenAI / Anthropic usage adapters).
 - Job spend file `_matraix_budget.json` (`playground.budget`) when `MATRIX_MAX_COST_USD` is set.
-- `matraix results` rollup (`src/matraix/job_results.py`) — text / JSON / CSV, optional `--group-by` persona fields.
+- `matraix results` rollup (`src/matraix/job_results.py`) — text / JSON / CSV / HTML, optional `--group-by` persona fields. Synthetic outputs are labeled as not human research.
 - Optional extras: `wandb`, `langsmith` environments; Harbor `traces` CLI (hidden).
 - Harbor viewer auth/status endpoints.
 

@@ -414,6 +414,13 @@ function drawContentFooter(
     SIDE_MM,
     y,
   );
+  pdf.setFontSize(6.5);
+  pdf.text(
+    "Synthetic outputs are not equivalent to human research.",
+    SIDE_MM,
+    y + 3.4,
+  );
+  pdf.setFontSize(8);
   pdf.text(
     t ? t("reports.pdf.pageOf", { page, total }) : `Page ${page} of ${total}`,
     A4_WIDTH_MM - SIDE_MM,
