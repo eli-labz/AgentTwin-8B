@@ -287,7 +287,7 @@ def _cmd_smoke(args: argparse.Namespace) -> None:
         persona=args.persona,
         keep_artifacts=bool(args.keep_artifacts),
     )
-        sys.stdout.write(format_smoke_report(report))
+    sys.stdout.write(format_smoke_report(report))
     if not report.ok:
         sys.exit(1)
 
