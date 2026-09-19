@@ -110,7 +110,7 @@ def test_forbids_identifiable_employee_cloning() -> None:
         organization_id=org.id,
         name="A",
     )
-    with pytest.raises(EnterpriseSchemaError, match="clone"):
+    with pytest.raises(EnterpriseSchemaError, match="identifiable employees"):
         build_population_declaration(
             tenant_id=tenant.id,
             organization_id=org.id,
