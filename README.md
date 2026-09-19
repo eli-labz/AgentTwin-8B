@@ -1,9 +1,11 @@
 <div align="center">
-  <h1>MatrAIx</h1>
-  <p><strong>Simulate before reality.</strong></p>
+  <h1>AgentTwin Enterprise</h1>
+  <p><strong>Enterprise synthetic workforce, digital stakeholders, and AI evaluation — on top of MatrAIx.</strong></p>
   <p>
-    Population-scale, persona-driven infrastructure for evaluating AI systems
-    and interactive products with heterogeneous simulated users.
+    This repository is the open-source AgentTwin-8B / MatrAIx + Harbor stack.
+    The product direction is an additive enterprise control plane: tenant-scoped
+    populations, experiments, policy, and evaluation. It extends population-scale
+    persona simulation. It does not replace it.
   </p>
   <p>
     <strong>English</strong> |
@@ -38,25 +40,224 @@
 
 ---
 
-**MatrAIx** is a population-scale, persona-driven infrastructure for evaluating
-AI systems and interactive products with heterogeneous simulated users. Instead
-of testing against a generic or interchangeable user, MatrAIx instantiates
-sampled persona records as LLM agents and runs them through reproducible tasks
-across four environments — **Survey**, **AI Chatbot**, **Web**, and **App**
-(native desktop and mobile, including macOS and iOS).
+**AgentTwin Enterprise** is the control-plane direction for this repository:
+tenant-isolated organizations, shaped synthetic workforces, experiment launch
+records, policy-gated model routing, and evaluation that never treats
+simulated users as human research.
 
-At its foundation is a shared schema of **1,290 categorical dimensions** covering
-background, psychology, capability, and behavior. Personas combine
-dependency-aware synthetic generation with evidence-aware human grounding; a
-deterministic, quality-filtered coreset of **one million personas** is released
-for research on
-[Hugging Face](https://huggingface.co/datasets/MatrAIx2026/MatrAIx_Persona_1M_Public_Release).
-Shared telemetry, task-owned verification, and reporting connect individual
-responses and trajectories to subgroup- and population-level findings.
+The runnable product underneath is still **MatrAIx** (Python package
+`matraix`) plus **Harbor**. Personas remain 1,290-dimension YAML records.
+Harbor `Job` / `Trial` still execute Survey, Chatbot, Web, and App tasks.
+Playground and `matraix run` are unchanged. Enterprise code lives in
+`src/matraix/enterprise/` and is additive.
 
-The name nods to *The Matrix*: a simulated world useful for exploration, stress
-testing, and hypothesis generation, **not a replacement for evidence from real
-people**.
+The name of the simulation layer nods to *The Matrix*: useful for
+exploration, stress testing, and hypothesis generation, **not a replacement
+for evidence from real people**.
+
+## What works today
+
+The open-source stack is the same research simulator:
+
+- **1,290-dimension personas** with a public [1M coreset](https://huggingface.co/datasets/MatrAIx2026/MatrAIx_Persona_1M_Public_Release)
+- Four task environments: **Survey**, **AI Chatbot**, **Web**, **App**
+- **Harbor** trials, persona-conditioned agents, task-owned verifiers
+- **Playground** visual runner and `uv run matraix run` / `results` / `smoke`
+- Shared telemetry and reporting on Harbor job trees (`jobs/`)
+
+See the [Handbook](docs/README.md) and [quickstart](docs/quickstart.md).
+
+## Enterprise status (in progress)
+
+Phases **0–6** are on this branch as a **draft pull request**
+([#1](https://github.com/eli-labz/AgentTwin-8B/pull/1)). They are not a
+finished production platform. Phases 7–10 (console, executive reporting,
+IAM hardening, packaging) are **not** done.
+
+| Phase | On this branch |
+|-------|----------------|
+| 0 Domain + tenancy types | Yes — `matraix.enterprise` IDs, entities, in-memory store |
+| 1 Persistence + `/api/v1` | Yes — SQLite optional; `matraix enterprise-api` |
+| 2 Org graph + population declarations | Yes — 10k-shaped declarations; no `persona/synthesis` rewrite |
+| 3 Experiments + cost estimate | Yes — maps to a Harbor **job document**, not `harbor.Job` |
+| 4 Model + policy gateways | Yes — beside LiteLLM; `SANDBOX_ONLY` default |
+| 5 Runtime planes + local worker | Yes — remote Docker/K8s/queue/batch are **stubs** |
+| 6 Telemetry, metrics, evaluation | Yes — OTel-shaped traces; deterministic eval first |
+| 7–10 Console, reports, IAM, packaging | Not on this branch |
+
+Python package: `matraix.enterprise`. HTTP: `/api/v1` (OpenAPI at `/docs` when
+the enterprise API is running). Default store is in-memory; set
+`MATRIX_ENTERPRISE_STORE=sqlite` for a local file.
+
+## Caveats
+
+- **`SANDBOX_ONLY` is the default** enterprise policy. Live / external model
+  use requires an explicit tenant policy. `matraix run` defaults are unchanged.
+- **Synthetic personas are simulation parameters**, not psychological
+  equivalents of employees or customers.
+- **Synthetic outputs are not human research.** Evaluation bundles set
+  `synthetic_equivalent_to_human_research: false` and recommend human
+  validation. Do not present sandbox completions or metrics as usability
+  tests, employee consultation, or customer research.
+- **No hard-coded secrets.** Optional `MATRIX_ENTERPRISE_API_TOKEN` and model
+  keys come from the environment only.
+- The core domain stays **cloud-neutral** and **provider-independent**.
+  Harbor, Playground, and LiteLLM remain the existing simulation path.
+
+## Quick start
+
+### Install
+
+```bash
+git clone https://github.com/eli-labz/AgentTwin-8B.git && cd AgentTwin-8B
+uv venv --python 3.12
+uv pip install -e .
+uv pip install pytest pytest-asyncio httpx
+uv pip install -e packages/playground
+uv pip install -e packages/harbor-langsmith
+uv pip install -e packages/rewardkit
+```
+
+Requirements: [uv](https://docs.astral.sh/uv/) and Python 3.12; Docker for
+Web and OS-app tasks; Node.js 20+ for Playground / viewer frontends; model
+API keys for real persona runs ([agents.md](docs/environment/agents.md)).
+Smoke checks do not need a key.
+
+> **Windows users**: run everything inside
+> [WSL2](https://learn.microsoft.com/windows/wsl/install). Clone **inside the
+> WSL filesystem** (not `/mnt/c/…`) and enable Docker Desktop WSL integration.
+> Native PowerShell/cmd is not supported (task verifiers require `bash`).
+
+Run jobs with **`uv run matraix run …`**. Summarize a finished job with
+**`uv run matraix results <job>`**. Advanced runtime tools stay under
+`uv run harbor …`.
+
+```bash
+export ANTHROPIC_API_KEY="sk-ant-..."   # anthropic/claude-* models
+# export OPENAI_API_KEY="sk-..."        # openai/gpt-* models
+```
+
+Playground can also load keys from `application/playground/.env.local`.
+
+### Smoke tests (no API key)
+
+| Check | Confirms you can run | Command |
+|-------|----------------------|---------|
+| **Without Docker** | Survey and Chat | `uv run matraix smoke application/tasks/example-survey_product-feedback` |
+| **With Docker** | Web and OS-app | `uv run matraix run -c configs/jobs/example-job-recipe/harbor-smoke-local.yaml` |
+
+The first should print `Smoke: ok`. Details:
+[quickstart §3](docs/quickstart.md#3-smoke-tests-two-lanes).
+
+### Enterprise API (additive; optional)
+
+Does not change `matraix run`. Default policy remains `SANDBOX_ONLY`.
+
+```bash
+# In-memory (process-local)
+uv run matraix enterprise-api --port 8090
+
+# Optional durable SQLite + Bearer token (set in the environment; never commit)
+export MATRIX_ENTERPRISE_STORE=sqlite
+export MATRIX_ENTERPRISE_DB=.enterprise/store.sqlite
+# export MATRIX_ENTERPRISE_API_TOKEN=   # when set, send Authorization: Bearer …
+uv run matraix enterprise-api --port 8090
+```
+
+Open `http://127.0.0.1:8090/docs`. Tenant-scoped routes need `X-Tenant-Id`.
+Contract: [docs/enterprise/api.md](docs/enterprise/api.md).
+
+### Import Persona 1M (recommended)
+
+The in-repo `matraix-persona-dev-sample` (~200) is for smoke only.
+
+```bash
+huggingface-cli download MatrAIx2026/MatrAIx_Persona_1M_Public_Release \
+  --repo-type dataset \
+  --local-dir persona/datasets/matraix-persona-1m/release
+```
+
+Playground: Dataset → **`matraix-persona-1m`**. CLI:
+`--dataset persona/datasets/matraix-persona-1m`.
+
+### GUI and CLI task runs
+
+Playground (two terminals):
+
+```bash
+VENV=.venv bash application/playground/backend/run_dev.sh
+cd application/playground/frontend && npm ci && npm run dev
+```
+
+Open **http://localhost:5173**. Details:
+[Playground §10](docs/quickstart.md#10-playground--play-tasks-visually).
+
+CLI — copy a reference task, generate a Harbor job recipe, then run it:
+
+```bash
+cp -R application/tasks/example-survey_product-feedback \
+  application/tasks/<your-task-name>
+
+uv run python application/scripts/generate_application_job.py \
+  --task application/tasks/example-survey_product-feedback \
+  --execution-mode auto \
+  --persona-ids 0042 \
+  --model-name anthropic/claude-sonnet-4-6
+
+uv run matraix run -c configs/jobs/application-task-job-recipe/example-survey-product-feedback-auto-n1.yaml
+```
+
+| Type | Reference task |
+|------|----------------|
+| Survey | `application/tasks/example-survey_product-feedback` |
+| Chat | `application/tasks/example-chat-api_support_chatbot` |
+| Web | `application/tasks/example-web-playwright_quote-choice` |
+| OS-app | `application/tasks/example-computer-use-linux_note-to-csv` |
+
+## Docs
+
+**[Handbook](docs/README.md)** — persona / application / environment guides.
+
+**AgentTwin Enterprise** (this branch):
+
+| Doc | Contents |
+|-----|----------|
+| [REPOSITORY_AUDIT.md](docs/enterprise/REPOSITORY_AUDIT.md) | What the repo already is |
+| [TARGET_ARCHITECTURE.md](docs/enterprise/TARGET_ARCHITECTURE.md) | Layered platform; extend, don’t replace |
+| [DOMAIN_MODEL.md](docs/enterprise/DOMAIN_MODEL.md) | Tenant IDs and entities |
+| [SECURITY_MODEL.md](docs/enterprise/SECURITY_MODEL.md) | Isolation, policy, secrets |
+| [GOVERNANCE.md](docs/enterprise/GOVERNANCE.md) | Synthetic-user rules of use |
+| [IMPLEMENTATION_ROADMAP.md](docs/enterprise/IMPLEMENTATION_ROADMAP.md) | Phases 0–10 |
+| [api.md](docs/enterprise/api.md) | `/api/v1` |
+| [population-builder.md](docs/enterprise/population-builder.md) | 10k-shaped declarations |
+| [experiments.md](docs/enterprise/experiments.md) | Launch records → Harbor job YAML |
+| [model-gateway.md](docs/enterprise/model-gateway.md) | Policy + routing beside LiteLLM |
+| [runtime.md](docs/enterprise/runtime.md) | Control / data / execution planes |
+| [telemetry.md](docs/enterprise/telemetry.md) | Traces, metrics, eval SDK |
+| [ADR-0001](docs/adr/0001-enterprise-platform-boundaries.md) | Platform boundaries |
+
+<p align="center">
+  <img src="docs/assets/matraix-architecture.png" alt="MatrAIx architecture" width="900">
+</p>
+
+## Repository layout
+
+```text
+AgentTwin-8B/
+├── persona/                 Schema, datasets, synthesis/curation/validation
+├── application/             Tasks, Playground, generate_application_job.py
+├── environment/             Harbor runtime, persona agents, task images
+├── packages/                playground · rewardkit · harbor-langsmith
+├── apps/viewer/             Frontend paired with `harbor view`
+├── configs/jobs/            Curated & generated Harbor job recipes
+├── docs/                    Handbook + docs/enterprise/
+├── src/matraix/             CLI (`run` / `results` / `smoke` / `enterprise-api`)
+│   └── enterprise/          Additive control plane (Phases 0–6)
+├── tests/                   Unit / environment / enterprise tests
+└── jobs/                    Local Harbor outputs (gitignored)
+```
+
+Large generated datasets stay outside git (see the Hugging Face release).
 
 ## News & Recognition
 
@@ -72,170 +273,6 @@ people**.
 - **[2026-08-01]** Released [Persona 1M](https://huggingface.co/datasets/MatrAIx2026/MatrAIx_Persona_1M_Public_Release) on Hugging Face (~1M quality-filtered personas).
 - **[2026-07-31]** Open-sourced the Playground and task library: [MatrAIx-Persona-8B](https://github.com/MatrAIx-ai/MatrAIx-Persona-8B).
 - **[2026-07-29]** Position note: [From Personas to Simulated Users](https://matraix.ai/research/survey-from-personas-to-simulated-users.html).
-
-## Requirements
-
-- [Docker](https://docs.docker.com/get-docker/) — needed for Web and OS-app tasks
-- [uv](https://docs.astral.sh/uv/) and Python 3.12
-- Node.js 20+ (Playground / viewer frontends only)
-- Model API keys for real persona runs — see [agents.md](docs/environment/agents.md)
-  (the install checks below do not need a key)
-> **Windows users**: run everything inside
-> [WSL2](https://learn.microsoft.com/windows/wsl/install) — open PowerShell,
-> run `wsl --install` (installs Ubuntu), then clone this repo **inside the WSL
-> filesystem** (e.g. `~/MatrAIx`, not `/mnt/c/…`, which is much slower) and
-> enable *WSL integration* in Docker Desktop → Settings → Resources. Every
-> command in this README then works exactly as written. Native
-> PowerShell/cmd is not supported (the task verifiers require `bash`).
-
-## Installation
-
-```bash
-git clone <repo-url> && cd MatrAIx
-uv venv --python 3.12
-uv pip install -e .
-uv pip install pytest pytest-asyncio httpx
-uv pip install -e packages/playground
-uv pip install -e packages/harbor-langsmith
-uv pip install -e packages/rewardkit
-```
-
-Run jobs with **`uv run matraix run …`**. After install, use the
-[smoke tests](#smoke-tests) below to confirm Survey, Chat, Web, and OS-app are
-ready (no API key). Summarize a finished job with
-**`uv run matraix results <job>`**. Advanced runtime tools stay under
-`uv run harbor …`.
-
-Set a model API key before real GUI or CLI runs (smoke checks do not need one):
-
-```bash
-export ANTHROPIC_API_KEY="sk-ant-..."   # anthropic/claude-* models
-# export OPENAI_API_KEY="sk-..."        # openai/gpt-* models
-```
-
-See [agents.md](docs/environment/agents.md) for the full key matrix.
-Playground can also load keys from `application/playground/.env.local`.
-
-### Import Persona 1M (recommended)
-
-The in-repo `matraix-persona-dev-sample` (~200) is for smoke only. For real
-cohorts and Playground sampling, import the public 1M coreset:
-
-```bash
-huggingface-cli download MatrAIx2026/MatrAIx_Persona_1M_Public_Release \
-  --repo-type dataset \
-  --local-dir persona/datasets/matraix-persona-1m/release
-```
-
-Playground: Dataset → **`matraix-persona-1m`**. CLI: `--dataset persona/datasets/matraix-persona-1m`.
-Details: [Handbook § Persona 1M](docs/README.md#3-persona-1m-recommended).
-
-## Quick start
-
-### Smoke tests
-
-Two quick checks after install — no API key. Together they cover the default
-path for all four task types (Survey, Chat, Web, OS-app):
-
-| Check | Confirms you can run | Command |
-|-------|----------------------|---------|
-| **Without Docker** | Survey and Chat | `uv run matraix smoke application/tasks/example-survey_product-feedback` |
-| **With Docker** | Web and OS-app | `uv run matraix run -c configs/jobs/example-job-recipe/harbor-smoke-local.yaml` |
-
-The first finishes in seconds and should print `Smoke: ok`. The second builds a
-small local image on first run (a few minutes), then writes under
-`jobs/harbor-smoke-local/`. Step-by-step: [quickstart §3](docs/quickstart.md#3-smoke-tests-two-lanes).
-
-### GUI task runs
-
-Playground picks tasks, samples personas, and launches the same Matraix Playground jobs as CLI auto mode.
-Start API + frontend (two terminals):
-
-```bash
-# Terminal A — API
-VENV=.venv bash application/playground/backend/run_dev.sh
-
-# Terminal B — frontend
-cd application/playground/frontend && npm ci && npm run dev
-```
-
-Open **http://localhost:5173** → Playground → pick a persona cohort →
-pick Survey / Chat / Web / OS app tasks → **Lock pipeline** → **Run eval**.
-Details: [Playground §10](docs/quickstart.md#10-playground--play-tasks-visually).
-
-### CLI task develop / runs
-
-**Develop** — copy a reference task under `application/tasks/`, edit
-`task.toml` / `instruction.md` / `input/` / verifier, then register it for Playground
-([task-guide.md](docs/application/task-guide.md)):
-
-```bash
-cp -R application/tasks/example-survey_product-feedback \
-  application/tasks/<your-task-name>
-```
-
-| Type | Reference task |
-|------|----------------|
-| Survey | `application/tasks/example-survey_product-feedback` |
-| Chat | `application/tasks/example-chat-api_support_chatbot` |
-| Web | `application/tasks/example-web-playwright_quote-choice` |
-| OS-app | `application/tasks/example-computer-use-linux_note-to-csv` |
-
-**Run** — generate a Matraix Playground job (pins agent + model), then execute it:
-
-```bash
-uv run python application/scripts/generate_application_job.py \
-  --task application/tasks/example-survey_product-feedback \
-  --execution-mode auto \
-  --persona-ids 0042 \
-  --model-name anthropic/claude-sonnet-4-6
-
-# Use the export lines + recipe path the script prints, e.g.:
-uv run matraix run -c configs/jobs/application-task-job-recipe/example-survey-product-feedback-auto-n1.yaml
-```
-
-Batch (`--sample-size N`), filters, and chat / web / os-app examples:
-[docs/quickstart.md](docs/quickstart.md).
-
-## Docs
-
-**[MatrAIx Handbook](docs/README.md)** — guides, persona / application / environment docs.
-
-<p align="center">
-  <img src="docs/assets/matraix-architecture.png" alt="MatrAIx architecture" width="900">
-</p>
-
-## Repository layout
-
-```text
-MatrAIx/
-├── persona/                 Schema, datasets, synthesis/curation/validation pipelines
-│   ├── schema/              1,290-dimension persona schema
-│   ├── datasets/            Dev sample pool and persona YAMLs
-│   ├── validation/          Grounding / quality validation suites
-│   └── scripts/             Persona job & pipeline helpers
-├── application/
-│   ├── tasks/               Survey · chat · web · os-app task specs
-│   ├── task-spec/           Shared task contracts
-│   ├── playground/          Visual runner (backend API + frontend)
-│   └── scripts/             generate_application_job.py and task tooling
-├── environment/
-│   ├── runtime/             Matraix Playground runtime
-│   ├── agents/              Persona-conditioned agents
-│   ├── task-environments/   Docker images / sidecars
-│   └── adapters/            External adapters (e.g. SimpleQA)
-├── packages/                playground · rewardkit · harbor-langsmith
-├── apps/viewer/             Frontend paired with `harbor view`
-├── configs/jobs/            Curated & generated Matraix Playground job recipes
-├── docs/                    Handbook — persona/ · application/ · environment/
-├── examples/                Minimal example tasks
-├── src/matraix/             Python package entrypoints
-├── scripts/                 Repo-level helpers
-├── tests/                   Unit / environment tests
-└── jobs/                    Local Matraix Playground run outputs (gitignored)
-```
-
-Large generated datasets stay outside git (see the Hugging Face release above).
 
 ## Join the Community
 
