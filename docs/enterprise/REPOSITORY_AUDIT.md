@@ -38,7 +38,7 @@ persona/datasets/          application/tasks/           environment/
 
 There is **no** control-plane / data-plane / execution-plane split in code. Playground FastAPI (`application/playground/backend/api/app.py`) both serves UI APIs and launches jobs. Harbor `Job` (`environment/runtime/harbor/job.py`) is the single trial-batch entrypoint.
 
-There is **no** tenant, organization, experiment, or policy-engine type in the Python tree (repo-wide search for `tenant` / `RBAC` / `OIDC` / `OpenTelemetry` in product code returned no domain matches).
+There is **no** tenant, organization, experiment, or policy-engine type in the Python tree (repo-wide search for `tenant` / `RBAC` / `OIDC` / `OpenTelemetry` in product `.py` returned no domain matches). `opentelemetry-*` appears only as a **transitive** lockfile dependency, not wired into MatrAIx or Harbor call paths.
 
 ---
 
@@ -57,7 +57,7 @@ Sibling installable packages (`docs/packages.md`):
 |---------|------|------|
 | playground | `packages/playground` | Shared host runners, persona load, model client, `MATRIX_MAX_COST_USD` budget |
 | rewardkit | `packages/rewardkit` | Folder-based verifier criteria |
-| harbor-langsmith | `packages/harbor-langsmith` | LangSmith environment adapter |
+| harbor-langsmith | `packages/harbor-langsmith` | Harbor **job plugin** (`LangSmithPlugin`), not a compute environment |
 
 Console scripts: `harbor` / `hr` / `hb` → `harbor.cli.main:app`; `matraix` → `matraix.cli:main`.
 
@@ -99,7 +99,11 @@ Synthetic generator rows (`matraix.persona_generator._persona_entry`) emit `pers
 
 Playground display model (`packages/playground/src/playground/types.py` `Persona`) is a **reduced** card: `id`, `name`, `summary`, `context`, `source`, preferences/dislikes/constraints/goal/communication_style. It is not the 1,290-dim record.
 
-Dev generation uses a **subset** of the catalog (`matraix.persona_consistency.CORE_DEV_DIMENSION_IDS`, index 1–47, plus `cog_*` and selected food dims) — not all 1,290 fields on every YAML.
+Checked-in YAML is **usually sparse**. `persona/schema/dimension_categories.json` declares `devProfile.dimensionCount: 124`, matching `load_dev_dimension_ids()` (core index ≤47 + all `cog_*` + selected food/`cuis_*`). `matraix-persona-dev-sample/persona_0001.yaml` has ~294 populated keys; `persona/datasets/validation-subset/persona_0094.yaml` is a full 1,290-key fixture. There are **no Pydantic persona models** under `persona/` — JSON + dataclasses (`persona/extraction/schema.py`, agent `loader.py`).
+
+Agent loader (`environment/agents/matraix/agents/persona/loader.py`) accepts schema **v2** (flat `dimensions`), **v1** (nested domain blocks), and **v0** (legacy prompt fields). Invalid mappings raise `ValueError`.
+
+Dev generation uses that 124-id subset — not all 1,290 fields on every YAML.
 
 ---
 
@@ -113,7 +117,7 @@ Documented in `docs/persona/pipeline.md`. Layout under `persona/`:
 | Extraction (Treiver) | `persona/extraction/` | Regex retrieval + optional LLM judge (`Treiver`) |
 | Curation | `persona/curation/` | Attribute pool + existing-data (Wiki, Amazon, surveys) |
 | Human extraction | `persona/human_extraction/` | vLLM extraction notes / GPU docs |
-| Synthesis | `persona/synthesis/` | Full-DAG (`graph/full_dag.json`) → `PersonaForwardSampler` |
+| Synthesis | `persona/synthesis/` | Full-DAG `graph/full_dag.json` (v4.4: **1,308 nodes**, 6,999 edges; includes latent/helper nodes beyond the 1,290 emit attributes) → `PersonaForwardSampler` |
 | Post-process | `persona/post_process/` | Quality filter, MinHash dedup, unified Parquet, 1M coreset |
 | Validation probes | `persona/validation/tasks/` | 10 attributes × 4 envs |
 | Scripts | `persona/scripts/` | `generate_dev_personas.py`, `generate_persona_job.py` |
@@ -129,7 +133,7 @@ Public 1M coreset is **not** in git; install path is Hugging Face `MatrAIx2026/M
 
 Several independent validators — not one enterprise schema service.
 
-1. **Cross-dimension consistency** — `matraix.persona_consistency.validate_dimensions` (age / life_stage / seniority / years_experience / education). Used by the generator and unit tests (`tests/unit/playground_core/test_persona_generator.py`). Returns error strings; does not raise by itself.
+1. **Cross-dimension consistency** — `matraix.persona_consistency.validate_dimensions` (age / life_stage / seniority / years_experience / education). Used by the generator and unit tests (`tests/unit/playground_core/test_persona_generator.py`). Returns error strings; `generate_persona_dimensions()` raises `RuntimeError` when those strings are non-empty.
 2. **Catalog / DAG support** — `generate_persona_generator.filter_feasible_strata`, Full-DAG `assignment_supported`. Invalid Full-DAG contrast stamps error without resampling (`docs/persona/README.md`).
 3. **Unified codec** — wrong column count raises; unknown values become overrides (`AttributeCodec`).
 4. **Quality / contradiction / MinHash** — `persona/post_process/` (corpus build, not Playground launch).
@@ -137,7 +141,7 @@ Several independent validators — not one enterprise schema service.
 6. **Grounding job rollup** — `persona/reporting/eval_grounding_job.py` → `persona_grounding_report.json`.
 7. **Task contracts** — Harbor `task.toml` pydantic validators; application task tests in `tests/environment/`.
 
-Playground YAML loader (`playground.persona_catalog._load_curated`) **skips** non-dict YAML; it does not fail the process on a bad file.
+Playground YAML loader (`playground.persona_catalog._load_curated`) **skips** non-dict YAML; it does not fail the process on a bad file. The Harbor persona agent `load_persona()` path is stricter (`ValueError`). Extraction CLI `validate_extraction.py` exits 1 on errors (`--strict` also fails warnings). Quality-filter contradictions mark rows in `*.reject.bits` rather than rewriting source.
 
 ---
 
@@ -229,7 +233,9 @@ What exists today:
 - Optional extras: `wandb`, `langsmith` environments; Harbor `traces` CLI (hidden).
 - Harbor viewer auth/status endpoints.
 
-What does **not** exist: OpenTelemetry SDK usage, `trace_id` + `tenant_id` correlation, append-only security audit log separable from job artifacts, enterprise dashboards for queue depth / policy denials.
+Optional plugins: `harbor traces` (hidden CLI); `matraix run --plugin langsmith` via `packages/harbor-langsmith`; W&B as a Harbor **environment type** (`EnvironmentType.WANDB`), not an OTel exporter.
+
+What does **not** exist: OpenTelemetry SDK usage in product `.py`, `trace_id` + `tenant_id` correlation, append-only security audit log separable from job artifacts, enterprise dashboards for queue depth / policy denials.
 
 ---
 
@@ -241,7 +247,7 @@ Application tasks own `tests/` (shell + optional Python state checks) and emit `
 
 Persona-adherence probes use an LLM judge (`docs/persona/validation.md`) — complementary, not the only path. Docs and `application/task-spec` emphasize deterministic checks where possible.
 
-Verifier network policy is separate from the agent (`NetworkPolicy` on task config).
+Verifier network policy is separate from the agent (`NetworkPolicy` on task config). Verifier environment mode is `shared` or `separate` (`VerifierEnvironmentMode` in `harbor.models.task.config`).
 
 ---
 
@@ -252,8 +258,9 @@ Verifier network policy is separate from the agent (`NetworkPolicy` on task conf
 - Shell routes (`App.tsx`): Home, Persona World (store), Task Gallery, Playground cockpit, Runs.
 - Cockpit: persona sampling, task rail, lock pipeline, live mosaic, batch report PDF (`exportBatchReportPdf.ts`).
 - i18n packs: en-US, zh-Hans, zh-Hant, ja, ko, es, pt-BR.
-- API: `backend.api.app:app` on port 8765 (dev). CORS open to `localhost:5173`. **No authentication** (`docs/application/playground-api.md`: “does not require authentication in local development”).
+- API: `backend.api.app:app` on port 8765 (dev), **one uvicorn worker** (in-memory job registry). CORS open to `localhost:5173` with `allow_credentials=True`. **No authentication** (`docs/application/playground-api.md`: “does not require authentication in local development”).
 - OpenAPI at `/docs` when the backend is running.
+- Live routes beyond the handbook index include `POST /api/harbor/jobs/{job_name}/retry-failed`, `GET .../status`, job/trial `report.pdf`, and extra persona-pool endpoints (`ids`, `dimension-labels`, `match-attributes`, `contrast`).
 
 **Harbor Viewer** (`apps/viewer`, React Router): jobs, trials, compare, task definitions. Started with `harbor view ./jobs --dev`. GitHub OAuth via Supabase (`harbor.auth.handler.AuthHandler`, tests in `tests/unit/viewer/test_auth.py`). Unsafe `return_to` is rejected.
 
@@ -332,10 +339,10 @@ Observed in code:
 
 - **Research / single-operator default.** Playground API is unauthenticated. CORS allows local Vite origins.
 - **Secrets in environment variables**, not in repo. Credential preflight refuses to print values. Tests use fake `sk-…` strings via `monkeypatch.setenv`.
-- **Harbor registry auth** is GitHub OAuth through Supabase (`harbor.auth`, `harbor.db.client`) — for publishing/leaderboard, not Playground tenancy.
+- **Harbor registry auth** is GitHub OAuth through Supabase (`harbor.auth`, `harbor.db.client`) — for publishing/leaderboard, not Playground tenancy. `harbor/auth/constants.py` ships **default** `HARBOR_SUPABASE_URL` and a publishable key (overridable via env).
 - **Task network policy** can lock down agent/verifier egress (`NetworkMode`).
-- **Remote Runner** optional bearer `REMOTE_RUNNER_API_KEY`.
-- **Viewer** rejects unsafe OAuth `return_to`.
+- **Remote Runner** client may send `Authorization: Bearer` from `REMOTE_RUNNER_API_KEY`; `packages/playground/src/playground/remote_runner/server.py` does **not** validate that token.
+- **Viewer** rejects unsafe OAuth `return_to`. Local job browsing does not require login; Hub upload does.
 - **No `SECURITY.md`** existed before this phase.
 - **No CSRF / session IAM / RBAC / SCIM / OIDC** on Playground.
 - Harbor `JobConfig` dumps can redact agent env secrets (`tests/unit/models/test_agent_config_env.py`).
@@ -363,7 +370,7 @@ Not designed in code: million-user **concurrent** simulation as a scheduler prod
 
 ## 19. Major technical debt
 
-1. **Naming drift:** MatrAIx / Harbor / Playground / retired `personabench` (CI still greps for it; `task_catalog.py` comments still mention `personabench/` Harbor names).
+1. **Naming drift:** MatrAIx / Harbor / Playground / retired `personabench` (CI still greps for it; `task_catalog.py` comments still mention `personabench/` Harbor names) / legacy **AppSim** job-recipe prefixes (`configs/jobs/example-job-recipe/appSim-*.yaml`).
 2. **Playground API module docstring** still describes RecAI / `recbot.interecagent_bridge` (`application/playground/backend/api/app.py`) while the product path is Harbor jobs.
 3. **Dual persona models:** 1,290-dim YAML vs reduced `playground.types.Persona` vs packed Parquet vs enterprise-less Harbor `persona_path`.
 4. **Explicit setuptools package list** — easy to omit new modules (mitigated for `matraix.enterprise` in this phase).

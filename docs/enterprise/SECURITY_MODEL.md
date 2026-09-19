@@ -4,11 +4,13 @@
 
 See [REPOSITORY_AUDIT.md](REPOSITORY_AUDIT.md) §17. Summary:
 
-- Playground HTTP API is **unauthenticated** in local/dev (`docs/application/playground-api.md`).
+- Playground HTTP API is **unauthenticated** in local/dev (`docs/application/playground-api.md`). CORS allows Vite origins with credentials.
 - Model keys come from **environment variables**; `matraix.provider_credentials` never prints secret values.
-- Harbor Viewer / registry use **GitHub OAuth via Supabase**.
+- Harbor Viewer / registry use **GitHub OAuth via Supabase**. Defaults for URL and publishable key live in `harbor/auth/constants.py` (env override). Local `harbor view` job browsing is open; Hub upload requires login.
+- Remote Runner HTTP server does **not** enforce the optional client Bearer token.
 - Tasks may restrict egress (`NetworkMode`: no-network / public / allowlist).
 - Host survey/chat can honor `MATRIX_MAX_COST_USD` (`playground.budget.BudgetExceededError`).
+- No CSRF tokens on Playground or Viewer.
 
 Phase 0 does not turn Playground into an IdP. It defines the **domain isolation rules** later APIs must implement.
 
