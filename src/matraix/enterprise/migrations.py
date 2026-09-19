@@ -102,6 +102,48 @@ SCHEMA_MIGRATIONS: tuple[tuple[int, str], ...] = (
         CREATE INDEX idx_experiments_tenant ON experiments(tenant_id);
         """,
     ),
+    (
+        2,
+        """
+        CREATE TABLE org_edges (
+            tenant_id TEXT NOT NULL,
+            id TEXT NOT NULL,
+            organization_id TEXT NOT NULL,
+            relation TEXT NOT NULL,
+            source_kind TEXT NOT NULL,
+            source_id TEXT NOT NULL,
+            target_kind TEXT NOT NULL,
+            target_id TEXT NOT NULL,
+            attributes_json TEXT NOT NULL,
+            PRIMARY KEY (tenant_id, id),
+            FOREIGN KEY (tenant_id) REFERENCES tenants(id),
+            UNIQUE (
+                tenant_id, relation, source_kind, source_id, target_kind, target_id
+            )
+        );
+
+        CREATE INDEX idx_org_edges_tenant ON org_edges(tenant_id);
+        CREATE INDEX idx_org_edges_org ON org_edges(tenant_id, organization_id);
+
+        CREATE TABLE population_declarations (
+            tenant_id TEXT NOT NULL,
+            population_id TEXT NOT NULL,
+            organization_id TEXT NOT NULL,
+            target_size INTEGER NOT NULL,
+            backend TEXT NOT NULL,
+            segments_json TEXT NOT NULL,
+            constraints_json TEXT NOT NULL,
+            include_org_structure INTEGER NOT NULL,
+            privacy_mode TEXT NOT NULL,
+            resolved_counts_json TEXT NOT NULL,
+            PRIMARY KEY (tenant_id, population_id),
+            FOREIGN KEY (tenant_id) REFERENCES tenants(id)
+        );
+
+        CREATE INDEX idx_population_declarations_tenant
+            ON population_declarations(tenant_id);
+        """,
+    ),
 )
 
 

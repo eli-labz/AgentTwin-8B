@@ -32,6 +32,8 @@ def test_openapi_exposes_v1_paths() -> None:
     assert "/api/v1/tenants" in paths
     assert "/api/v1/populations" in paths
     assert "/api/v1/personas" in paths
+    assert "/api/v1/org-edges" in paths
+    assert "/api/v1/population-declarations" in paths
     assert spec["info"]["title"] == "AgentTwin Enterprise API"
 
 
@@ -162,6 +164,111 @@ def test_api_token_required_when_configured(monkeypatch: pytest.MonkeyPatch) -> 
     assert ok.status_code == 200
     docs = client.get("/docs")
     assert docs.status_code == 200
+
+
+def test_org_edges_and_10k_declaration_via_api() -> None:
+    client = _client()
+    tenant = client.post("/api/v1/tenants", json={"name": "Acme", "slug": "acme"}).json()
+    headers = {"X-Tenant-Id": tenant["id"]}
+    manager = client.post(
+        "/api/v1/personas",
+        json={"record": _legacy_record()},
+        headers=headers,
+    ).json()
+    report_record = dict(_legacy_record())
+    report_record["persona_id"] = "0043"
+    report = client.post(
+        "/api/v1/personas",
+        json={"record": report_record},
+        headers=headers,
+    ).json()
+    edge = client.post(
+        "/api/v1/org-edges",
+        json={
+            "relation": "reports_to",
+            "source_kind": "persona",
+            "source_id": report["id"],
+            "target_kind": "persona",
+            "target_id": manager["id"],
+        },
+        headers=headers,
+    )
+    assert edge.status_code == 200
+    assert edge.json()["relation"] == "reports_to"
+
+    declared = client.post(
+        "/api/v1/population-declarations",
+        json={
+            "name": "10k workforce",
+            "target_size": 10000,
+            "backend": "coreset_1m",
+            "include_org_structure": True,
+            "segments": [
+                {"name": "engineering", "share": 0.4},
+                {"name": "support", "share": 0.35},
+                {"name": "other", "share": 0.25},
+            ],
+        },
+        headers=headers,
+    )
+    assert declared.status_code == 200
+    body = declared.json()
+    assert body["target_size"] == 10000
+    assert body["backend"] == "coreset_1m"
+    assert sum(body["resolved_counts"]) == 10000
+    fetched = client.get(
+        f"/api/v1/populations/{body['population_id']}/declaration",
+        headers=headers,
+    )
+    assert fetched.status_code == 200
+    assert fetched.json()["resolved_counts"] == body["resolved_counts"]
+
+
+def test_org_edge_and_declaration_are_tenant_isolated() -> None:
+    client = _client()
+    alpha = client.post("/api/v1/tenants", json={"name": "Alpha", "slug": "alpha"}).json()
+    bravo = client.post("/api/v1/tenants", json={"name": "Bravo", "slug": "bravo"}).json()
+    alpha_headers = {"X-Tenant-Id": alpha["id"]}
+    persona = client.post(
+        "/api/v1/personas",
+        json={"record": _legacy_record()},
+        headers=alpha_headers,
+    ).json()
+    edge = client.post(
+        "/api/v1/org-edges",
+        json={
+            "relation": "owns_system",
+            "source_kind": "persona",
+            "source_id": persona["id"],
+            "target_kind": "system",
+            "target_id": "sys_erp",
+        },
+        headers=alpha_headers,
+    ).json()
+    assert (
+        client.get("/api/v1/org-edges", headers={"X-Tenant-Id": bravo["id"]}).json()
+        == []
+    )
+    missing = client.get(
+        f"/api/v1/org-edges/{edge['id']}",
+        headers={"X-Tenant-Id": bravo["id"]},
+    )
+    assert missing.status_code == 404
+
+    declared = client.post(
+        "/api/v1/population-declarations",
+        json={
+            "target_size": 10000,
+            "backend": "full_dag",
+            "segments": [{"name": "all", "count": 10000}],
+        },
+        headers=alpha_headers,
+    ).json()
+    other = client.get(
+        f"/api/v1/populations/{declared['population_id']}/declaration",
+        headers={"X-Tenant-Id": bravo["id"]},
+    )
+    assert other.status_code == 404
 
 
 def test_invalid_persona_schema_is_400() -> None:

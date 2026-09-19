@@ -13,7 +13,7 @@ Each phase must leave the repository **runnable**: `matraix smoke`, existing Har
 
 **Exit:** docs exist; invalid persona schemas fail; cross-tenant get raises; existing smoke/unit paths still pass.
 
-## Phase 1 — Domain persistence, configuration, APIs *(this change)*
+## Phase 1 — Domain persistence, configuration, APIs *(accepted)*
 
 - Repository protocol `EnterpriseRepository` + SQLite migrations (`matraix.enterprise.migrations`); in-memory store remains the default / fallback
 - Versioned `/api/v1` for tenants, organizations, populations, personas with FastAPI OpenAPI (`docs/enterprise/api.md`); `matraix enterprise-api`
@@ -23,13 +23,13 @@ Each phase must leave the repository **runnable**: `matraix smoke`, existing Har
 
 **Exit:** create tenant → default org → population → wrap existing YAML persona via API or repository.
 
-## Phase 2 — Enterprise personas, org graph, populations
+## Phase 2 — Enterprise personas, org graph, populations *(this change)*
 
-- Persist optional `enterprise` dimensions
-- Organizational graph edges: REPORTS_TO, MEMBER_OF, COLLABORATES_WITH, DEPENDS_ON, APPROVES, ESCALATES_TO, SERVES, SUPPLIES, REVIEWS, OWNS_PROCESS, OWNS_SYSTEM
-- Population builder: filters, distributions, org structure, drift tests
-- Privacy-preserving default: aggregate stats → constraints → synthetic → validate (no silent cloning of identifiable employees)
-- Keep Treiver / Full-DAG / 1M coreset as generation backends
+- Organizational graph edges persisted on `EnterpriseRepository` / SQLite (in-memory fallback)
+- Population builder declares counts/segments/constraints and names Treiver / Full-DAG / 1M backends — does not rewrite `persona/synthesis`
+- Privacy-preserving default: `aggregate_stats_then_synthetic` (no identifiable employee cloning)
+- `/api/v1/org-edges` and `/api/v1/population-declarations`
+- Tests: graph CRUD + isolation, 10k declaration validation, existing enterprise/API/smoke
 
 **Exit:** a 10k-employee-shaped population can be declared and validated without rewriting `persona/synthesis`.
 
@@ -118,4 +118,4 @@ Each phase must leave the repository **runnable**: `matraix smoke`, existing Har
 
 ## Next implementation target (after this PR)
 
-**Phase 2:** persist optional org-graph edges, a population builder that can declare a 10k-shaped set without rewriting `persona/synthesis`, and keep Treiver / Full-DAG / 1M as generation backends. Optional follow-up on this API: experiment routes and binding Playground launches to `tenant_id`.
+**Phase 3:** experiment control plane — `EnterpriseExperiment` launch record mapped onto existing Harbor job YAML (do not replace `Job`), seed/budget/governance metadata, cost estimate before run.

@@ -21,6 +21,7 @@ from matraix.enterprise.entities import (
     Population,
     Tenant,
 )
+from matraix.enterprise.graph import OrgEdge, OrgNodeKind, OrgRelation
 from matraix.enterprise.errors import (
     CrossTenantAccessError,
     EnterpriseSchemaError,
@@ -29,10 +30,15 @@ from matraix.enterprise.errors import (
 from matraix.enterprise.ids import (
     EntityKind,
     OrganizationId,
+    OrgEdgeId,
     PersonaId,
     PopulationId,
     TenantId,
     new_id,
+)
+from matraix.enterprise.population_builder import (
+    PopulationSegment,
+    build_population_declaration,
 )
 from matraix.enterprise.repositories import EnterpriseRepository
 from matraix.enterprise.store import (
@@ -107,6 +113,51 @@ class PersonaOut(BaseModel):
     data_classification: str
 
 
+class OrgEdgeCreate(BaseModel):
+    relation: str
+    source_kind: str
+    source_id: str
+    target_kind: str
+    target_id: str
+    organization_id: str | None = None
+    attributes: dict[str, str] = Field(default_factory=dict)
+
+
+class OrgEdgeOut(BaseModel):
+    id: str
+    tenant_id: str
+    organization_id: str
+    relation: str
+    source_kind: str
+    source_id: str
+    target_kind: str
+    target_id: str
+    attributes: dict[str, str] = Field(default_factory=dict)
+
+
+class SegmentIn(BaseModel):
+    name: str
+    count: int | None = None
+    share: float | None = None
+    filters: dict[str, list[str]] = Field(default_factory=dict)
+    constraints: dict[str, str] = Field(default_factory=dict)
+
+
+class PopulationDeclarationIn(BaseModel):
+    target_size: int = Field(..., examples=[10000])
+    backend: str = Field(..., examples=["coreset_1m"])
+    segments: list[SegmentIn]
+    constraints: list[str] = Field(default_factory=list)
+    include_org_structure: bool = False
+    privacy_mode: str = "aggregate_stats_then_synthetic"
+    organization_id: str | None = None
+    name: str | None = Field(
+        default=None,
+        description="When creating a population with the declaration, the population name.",
+    )
+    description: str | None = None
+
+
 def _configured_token() -> str | None:
     token = os.environ.get(API_TOKEN_ENV, "").strip()
     return token or None
@@ -174,6 +225,33 @@ def _population_out(population: Population) -> PopulationOut:
     )
 
 
+def _org_edge_out(edge: OrgEdge) -> OrgEdgeOut:
+    return OrgEdgeOut(
+        id=edge.id.value,
+        tenant_id=edge.tenant_id.value,
+        organization_id=edge.organization_id.value,
+        relation=edge.relation.value,
+        source_kind=edge.source_kind.value,
+        source_id=edge.source_id,
+        target_kind=edge.target_kind.value,
+        target_id=edge.target_id,
+        attributes=dict(edge.attributes),
+    )
+
+
+def _segments_from_payload(payload: list[SegmentIn]) -> list[PopulationSegment]:
+    return [
+        PopulationSegment(
+            name=item.name,
+            count=item.count,
+            share=item.share,
+            filters=item.filters,
+            constraints=item.constraints,
+        )
+        for item in payload
+    ]
+
+
 def _persona_out(persona: EnterprisePersona) -> PersonaOut:
     return PersonaOut(
         id=persona.id.value,
@@ -215,6 +293,11 @@ def create_enterprise_app(
             {"name": "tenants", "description": "Isolation boundaries"},
             {"name": "organizations", "description": "Business units under a tenant"},
             {"name": "populations", "description": "Named persona sets"},
+            {
+                "name": "population-declarations",
+                "description": "Shaped population builder (does not rewrite persona/synthesis)",
+            },
+            {"name": "org-edges", "description": "Organizational graph relationships"},
             {"name": "personas", "description": "Wrappers around existing YAML records"},
         ],
     )
@@ -372,6 +455,135 @@ def create_enterprise_app(
     ) -> PersonaOut:
         tenant = _require_tenant_header(x_tenant_id)
         return _persona_out(_store().get_persona(tenant, PersonaId(tenant, persona_id)))
+
+    @app.post("/api/v1/org-edges", response_model=OrgEdgeOut, tags=["org-edges"])
+    def create_org_edge(
+        payload: OrgEdgeCreate,
+        x_tenant_id: Annotated[str | None, Header(alias=TENANT_HEADER)] = None,
+    ) -> OrgEdgeOut:
+        tenant = _require_tenant_header(x_tenant_id)
+        organization_id = _resolve_organization_id(
+            _store(), tenant, payload.organization_id
+        )
+        edge = OrgEdge(
+            id=OrgEdgeId(tenant, new_id(EntityKind.ORG_EDGE)),
+            tenant_id=tenant,
+            organization_id=organization_id,
+            relation=payload.relation,
+            source_kind=payload.source_kind,
+            source_id=payload.source_id,
+            target_kind=payload.target_kind,
+            target_id=payload.target_id,
+            attributes=payload.attributes,
+        )
+        return _org_edge_out(_store().put_org_edge(edge))
+
+    @app.get("/api/v1/org-edges", response_model=list[OrgEdgeOut], tags=["org-edges"])
+    def list_org_edges(
+        x_tenant_id: Annotated[str | None, Header(alias=TENANT_HEADER)] = None,
+        relation: Annotated[str | None, Query()] = None,
+    ) -> list[OrgEdgeOut]:
+        tenant = _require_tenant_header(x_tenant_id)
+        parsed_relation = None
+        if relation:
+            try:
+                parsed_relation = OrgRelation(relation.strip().lower())
+            except ValueError as exc:
+                raise HTTPException(
+                    status_code=400, detail=f"unknown org relation {relation!r}"
+                ) from exc
+        return [
+            _org_edge_out(item)
+            for item in _store().list_org_edges(tenant, relation=parsed_relation)
+        ]
+
+    @app.get("/api/v1/org-edges/{edge_id}", response_model=OrgEdgeOut, tags=["org-edges"])
+    def get_org_edge(
+        edge_id: str,
+        x_tenant_id: Annotated[str | None, Header(alias=TENANT_HEADER)] = None,
+    ) -> OrgEdgeOut:
+        tenant = _require_tenant_header(x_tenant_id)
+        return _org_edge_out(_store().get_org_edge(tenant, OrgEdgeId(tenant, edge_id)))
+
+    @app.delete("/api/v1/org-edges/{edge_id}", status_code=204, tags=["org-edges"])
+    def delete_org_edge(
+        edge_id: str,
+        x_tenant_id: Annotated[str | None, Header(alias=TENANT_HEADER)] = None,
+    ) -> None:
+        tenant = _require_tenant_header(x_tenant_id)
+        _store().delete_org_edge(tenant, OrgEdgeId(tenant, edge_id))
+
+    def _put_declaration(
+        tenant: TenantId,
+        population: Population,
+        payload: PopulationDeclarationIn,
+    ) -> dict[str, Any]:
+        declaration = build_population_declaration(
+            tenant_id=tenant,
+            organization_id=population.organization_id,
+            population_id=population.id,
+            target_size=payload.target_size,
+            backend=payload.backend,
+            segments=_segments_from_payload(payload.segments),
+            constraints=payload.constraints,
+            include_org_structure=payload.include_org_structure,
+            privacy_mode=payload.privacy_mode,
+        )
+        stored = _store().put_population_declaration(declaration)
+        return stored.to_dict()
+
+    @app.post(
+        "/api/v1/population-declarations",
+        tags=["population-declarations"],
+    )
+    def create_population_declaration(
+        payload: PopulationDeclarationIn,
+        x_tenant_id: Annotated[str | None, Header(alias=TENANT_HEADER)] = None,
+    ) -> dict[str, Any]:
+        tenant = _require_tenant_header(x_tenant_id)
+        organization_id = _resolve_organization_id(
+            _store(), tenant, payload.organization_id
+        )
+        name = payload.name or f"{payload.target_size}-shaped population"
+        population = Population(
+            id=PopulationId(tenant, new_id(EntityKind.POPULATION)),
+            tenant_id=tenant,
+            organization_id=organization_id,
+            name=name,
+            description=payload.description,
+            target_size=payload.target_size,
+        )
+        stored_pop = _store().put_population(population)
+        return _put_declaration(tenant, stored_pop, payload)
+
+    @app.put(
+        "/api/v1/populations/{population_id}/declaration",
+        tags=["population-declarations"],
+    )
+    def put_population_declaration(
+        population_id: str,
+        payload: PopulationDeclarationIn,
+        x_tenant_id: Annotated[str | None, Header(alias=TENANT_HEADER)] = None,
+    ) -> dict[str, Any]:
+        tenant = _require_tenant_header(x_tenant_id)
+        population = _store().get_population(
+            tenant, PopulationId(tenant, population_id)
+        )
+        return _put_declaration(tenant, population, payload)
+
+    @app.get(
+        "/api/v1/populations/{population_id}/declaration",
+        tags=["population-declarations"],
+    )
+    def get_population_declaration(
+        population_id: str,
+        x_tenant_id: Annotated[str | None, Header(alias=TENANT_HEADER)] = None,
+    ) -> dict[str, Any]:
+        tenant = _require_tenant_header(x_tenant_id)
+        declaration = _store().get_population_declaration(
+            tenant, PopulationId(tenant, population_id)
+        )
+        return declaration.to_dict()
 
     return app
 

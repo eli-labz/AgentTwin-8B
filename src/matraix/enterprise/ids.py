@@ -39,6 +39,7 @@ class EntityKind(str, Enum):
     MODEL = "model"
     POLICY = "policy"
     ARTIFACT = "artifact"
+    ORG_EDGE = "org_edge"
 
 
 _KIND_PREFIX: dict[EntityKind, str] = {
@@ -58,6 +59,7 @@ _KIND_PREFIX: dict[EntityKind, str] = {
     EntityKind.MODEL: "mdl",
     EntityKind.POLICY: "pol",
     EntityKind.ARTIFACT: "art",
+    EntityKind.ORG_EDGE: "edg",
 }
 
 
@@ -144,6 +146,7 @@ ObservationId = _scoped_id(EntityKind.OBSERVATION, "ObservationId")
 ModelId = _scoped_id(EntityKind.MODEL, "ModelId")
 PolicyId = _scoped_id(EntityKind.POLICY, "PolicyId")
 ArtifactId = _scoped_id(EntityKind.ARTIFACT, "ArtifactId")
+OrgEdgeId = _scoped_id(EntityKind.ORG_EDGE, "OrgEdgeId")
 
 
 __all__ = [
@@ -156,6 +159,7 @@ __all__ = [
     "ExperimentId",
     "ModelId",
     "ObservationId",
+    "OrgEdgeId",
     "OrganizationId",
     "PersonaId",
     "PolicyId",

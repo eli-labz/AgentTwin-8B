@@ -58,11 +58,34 @@ Business unit under a tenant. Optional `parent_id` (same tenant only). Optional 
 
 ### Department / Team
 
-Named nodes for later org-graph edges. Team may point at a department. Cross-tenant foreign keys are rejected at construction.
+Named nodes for org-graph edges. Team may point at a department. Cross-tenant foreign keys are rejected at construction.
+
+### Org-graph edges
+
+Directed, tenant-owned relationships (`matraix.enterprise.graph.OrgEdge`). Relations:
+
+`reports_to`, `member_of`, `collaborates_with`, `depends_on`, `approves`, `escalates_to`, `serves`, `supplies`, `reviews`, `owns_process`, `owns_system`.
+
+Endpoints are `persona`, `team`, `department`, `organization`, or labeled `process` / `system` nodes (not first-class entities yet). Both ends are resolved inside the calling tenant. Stores raise `CrossTenantAccessError` on a foreign edge id. `reports_to` cannot be a self-loop. Duplicate `(relation, source, target)` tuples are rejected.
 
 ### Population
 
-Named, tenant-owned set with `organization_id`, optional `team_id`, optional `target_size`. This does not yet generate YAML pools; it is the control-plane handle Playground datasets will attach to.
+Named, tenant-owned set with `organization_id`, optional `team_id`, optional `target_size`. Playground datasets still attach here.
+
+### Population builder (declaration)
+
+`build_population_declaration` records a **shape** (target size, segments, filters, constraints, backend name). It does **not** rewrite `persona/synthesis` or emit YAML.
+
+| Field | Meaning |
+|-------|---------|
+| `target_size` | Declared headcount (10k-scale is a first-class test) |
+| `backend` | `treiver` / `full_dag` / `coreset_1m` — existing generation pipelines |
+| `segments` | Each has `count` **or** `share`, optional dimension filters |
+| `resolved_counts` | Integer split that sums to `target_size` |
+| `privacy_mode` | Default `aggregate_stats_then_synthetic`. Cloning identifiable employees is rejected. |
+| `include_org_structure` | Hint that org-graph edges should inform a later fill |
+
+Catalog filter values fail closed when the dimension is in `dimensions.json`. Unknown dimension ids are allowed as org overlays (e.g. `department`).
 
 ### EnterprisePersona
 

@@ -1,11 +1,12 @@
-"""AgentTwin Enterprise domain model (Phase 0–1).
+"""AgentTwin Enterprise domain model (Phase 0–2).
 
 This package is additive. It does not replace Harbor jobs, Playground, or the
 existing 1,290-dimension persona YAML schema. Enterprise fields are optional
 simulation parameters — not a claim of psychological equivalence to humans.
 
 Public surface: typed IDs, core entities, policy enums, tenant-bound
-repositories (in-memory default, SQLite optional), and ``/api/v1``.
+repositories (in-memory default, SQLite optional), ``/api/v1``, org-graph
+edges, and a population-shape builder that names existing generation backends.
 """
 
 from matraix.enterprise.entities import (
@@ -25,6 +26,7 @@ from matraix.enterprise.errors import (
     EnterpriseSchemaError,
     EntityNotFoundError,
 )
+from matraix.enterprise.graph import OrgEdge, OrgNodeKind, OrgRelation
 from matraix.enterprise.ids import (
     CohortId,
     DepartmentId,
@@ -34,6 +36,7 @@ from matraix.enterprise.ids import (
     ModelId,
     ObservationId,
     OrganizationId,
+    OrgEdgeId,
     PersonaId,
     PolicyId,
     PopulationId,
@@ -43,6 +46,12 @@ from matraix.enterprise.ids import (
     TenantId,
     UserId,
     new_id,
+)
+from matraix.enterprise.population_builder import (
+    GenerationBackend,
+    PopulationDeclaration,
+    PopulationSegment,
+    build_population_declaration,
 )
 from matraix.enterprise.policy import PolicyDecision, PolicyRequest
 from matraix.enterprise.repositories import (
@@ -73,10 +82,15 @@ __all__ = [
     "ExecutionId",
     "Experiment",
     "ExperimentId",
+    "GenerationBackend",
     "InMemoryEnterpriseStore",
     "ModelId",
     "ObservationId",
     "open_enterprise_store",
+    "OrgEdge",
+    "OrgEdgeId",
+    "OrgNodeKind",
+    "OrgRelation",
     "Organization",
     "OrganizationId",
     "PersonaId",
@@ -84,7 +98,10 @@ __all__ = [
     "PolicyId",
     "PolicyRequest",
     "Population",
+    "PopulationDeclaration",
     "PopulationId",
+    "PopulationSegment",
+    "build_population_declaration",
     "create_tenant_with_default_org",
     "ScenarioId",
     "SqliteEnterpriseStore",

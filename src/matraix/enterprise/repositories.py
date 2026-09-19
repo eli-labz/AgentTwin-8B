@@ -28,16 +28,19 @@ from matraix.enterprise.errors import (
     EnterpriseSchemaError,
     EntityNotFoundError,
 )
+from matraix.enterprise.graph import OrgEdge, OrgRelation, require_org_node
 from matraix.enterprise.ids import (
     DepartmentId,
     EntityId,
     ExperimentId,
     OrganizationId,
+    OrgEdgeId,
     PersonaId,
     PopulationId,
     TeamId,
     TenantId,
 )
+from matraix.enterprise.population_builder import PopulationDeclaration
 
 T = TypeVar("T")
 
@@ -95,6 +98,28 @@ class EnterpriseRepository(Protocol):
         self, tenant_id: TenantId, experiment_id: ExperimentId
     ) -> Experiment: ...
 
+    def put_org_edge(self, edge: OrgEdge) -> OrgEdge: ...
+
+    def get_org_edge(self, tenant_id: TenantId, edge_id: OrgEdgeId) -> OrgEdge: ...
+
+    def list_org_edges(
+        self,
+        tenant_id: TenantId,
+        *,
+        organization_id: OrganizationId | None = None,
+        relation: OrgRelation | None = None,
+    ) -> list[OrgEdge]: ...
+
+    def delete_org_edge(self, tenant_id: TenantId, edge_id: OrgEdgeId) -> None: ...
+
+    def put_population_declaration(
+        self, declaration: PopulationDeclaration
+    ) -> PopulationDeclaration: ...
+
+    def get_population_declaration(
+        self, tenant_id: TenantId, population_id: PopulationId
+    ) -> PopulationDeclaration: ...
+
     def close(self) -> None: ...
 
 
@@ -114,6 +139,10 @@ class _TenantBucket:
     populations: dict[str, Population] = field(default_factory=dict)
     personas: dict[str, EnterprisePersona] = field(default_factory=dict)
     experiments: dict[str, Experiment] = field(default_factory=dict)
+    org_edges: dict[str, OrgEdge] = field(default_factory=dict)
+    population_declarations: dict[str, PopulationDeclaration] = field(
+        default_factory=dict
+    )
 
 
 class InMemoryEnterpriseStore:
@@ -275,6 +304,72 @@ class InMemoryEnterpriseStore:
         except KeyError as exc:
             raise EntityNotFoundError(
                 f"unknown experiment {experiment_id.value}"
+            ) from exc
+
+    def put_org_edge(self, edge: OrgEdge) -> OrgEdge:
+        bucket = self._bucket(edge.tenant_id)
+        if edge.organization_id.value not in bucket.organizations:
+            raise EntityNotFoundError(
+                f"unknown organization {edge.organization_id.value}"
+            )
+        require_org_node(self, edge.tenant_id, edge.source_kind, edge.source_id)
+        require_org_node(self, edge.tenant_id, edge.target_kind, edge.target_id)
+        for existing in bucket.org_edges.values():
+            if existing.id != edge.id and existing.identity_key() == edge.identity_key():
+                raise EnterpriseSchemaError("duplicate org edge")
+        bucket.org_edges[edge.id.value] = edge
+        return edge
+
+    def get_org_edge(self, tenant_id: TenantId, edge_id: OrgEdgeId) -> OrgEdge:
+        _require_tenant(tenant_id, edge_id)
+        try:
+            return self._bucket(tenant_id).org_edges[edge_id.value]
+        except KeyError as exc:
+            raise EntityNotFoundError(f"unknown org edge {edge_id.value}") from exc
+
+    def list_org_edges(
+        self,
+        tenant_id: TenantId,
+        *,
+        organization_id: OrganizationId | None = None,
+        relation: OrgRelation | None = None,
+    ) -> list[OrgEdge]:
+        items = list(self._bucket(tenant_id).org_edges.values())
+        if organization_id is not None:
+            _require_tenant(tenant_id, organization_id)
+            items = [item for item in items if item.organization_id == organization_id]
+        if relation is not None:
+            items = [item for item in items if item.relation is relation]
+        return items
+
+    def delete_org_edge(self, tenant_id: TenantId, edge_id: OrgEdgeId) -> None:
+        self.get_org_edge(tenant_id, edge_id)
+        del self._bucket(tenant_id).org_edges[edge_id.value]
+
+    def put_population_declaration(
+        self, declaration: PopulationDeclaration
+    ) -> PopulationDeclaration:
+        bucket = self._bucket(declaration.tenant_id)
+        if declaration.population_id.value not in bucket.populations:
+            raise EntityNotFoundError(
+                f"unknown population {declaration.population_id.value}"
+            )
+        if declaration.organization_id.value not in bucket.organizations:
+            raise EntityNotFoundError(
+                f"unknown organization {declaration.organization_id.value}"
+            )
+        bucket.population_declarations[declaration.population_id.value] = declaration
+        return declaration
+
+    def get_population_declaration(
+        self, tenant_id: TenantId, population_id: PopulationId
+    ) -> PopulationDeclaration:
+        _require_tenant(tenant_id, population_id)
+        try:
+            return self._bucket(tenant_id).population_declarations[population_id.value]
+        except KeyError as exc:
+            raise EntityNotFoundError(
+                f"unknown population declaration {population_id.value}"
             ) from exc
 
     def close(self) -> None:

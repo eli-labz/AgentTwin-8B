@@ -28,14 +28,26 @@ from matraix.enterprise.errors import (
     EnterpriseSchemaError,
     EntityNotFoundError,
 )
+from matraix.enterprise.graph import (
+    OrgEdge,
+    OrgNodeKind,
+    OrgRelation,
+    require_org_node,
+)
 from matraix.enterprise.ids import (
     DepartmentId,
     ExperimentId,
     OrganizationId,
+    OrgEdgeId,
     PersonaId,
     PopulationId,
     TeamId,
     TenantId,
+)
+from matraix.enterprise.population_builder import (
+    GenerationBackend,
+    PopulationDeclaration,
+    PopulationSegment,
 )
 from matraix.enterprise.migrations import apply_migrations
 from matraix.enterprise.persona_schema import parse_enterprise_block
@@ -588,3 +600,197 @@ class SqliteEnterpriseStore:
             raise EntityNotFoundError(
                 f"unknown organization {organization_id.value}"
             ) from exc
+
+    def put_org_edge(self, edge: OrgEdge) -> OrgEdge:
+        with self._lock:
+            self._require_known_tenant(edge.tenant_id)
+            self._require_organization(edge.tenant_id, edge.organization_id)
+            require_org_node(self, edge.tenant_id, edge.source_kind, edge.source_id)
+            require_org_node(self, edge.tenant_id, edge.target_kind, edge.target_id)
+            try:
+                self._conn.execute(
+                    """
+                    INSERT INTO org_edges(
+                        tenant_id, id, organization_id, relation, source_kind,
+                        source_id, target_kind, target_id, attributes_json
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(tenant_id, id) DO UPDATE SET
+                        organization_id = excluded.organization_id,
+                        relation = excluded.relation,
+                        source_kind = excluded.source_kind,
+                        source_id = excluded.source_id,
+                        target_kind = excluded.target_kind,
+                        target_id = excluded.target_id,
+                        attributes_json = excluded.attributes_json
+                    """,
+                    (
+                        edge.tenant_id.value,
+                        edge.id.value,
+                        edge.organization_id.value,
+                        edge.relation.value,
+                        edge.source_kind.value,
+                        edge.source_id,
+                        edge.target_kind.value,
+                        edge.target_id,
+                        _json_dumps(edge.attributes),
+                    ),
+                )
+                self._conn.commit()
+            except sqlite3.IntegrityError as exc:
+                raise EnterpriseSchemaError("duplicate org edge") from exc
+            return edge
+
+    def get_org_edge(self, tenant_id: TenantId, edge_id: OrgEdgeId) -> OrgEdge:
+        _require_tenant(tenant_id, edge_id)
+        with self._lock:
+            self._require_known_tenant(tenant_id)
+            row = self._conn.execute(
+                "SELECT * FROM org_edges WHERE tenant_id = ? AND id = ?",
+                (tenant_id.value, edge_id.value),
+            ).fetchone()
+            if row is None:
+                raise EntityNotFoundError(f"unknown org edge {edge_id.value}")
+            return self._org_edge_from_row(row)
+
+    def list_org_edges(
+        self,
+        tenant_id: TenantId,
+        *,
+        organization_id: OrganizationId | None = None,
+        relation: OrgRelation | None = None,
+    ) -> list[OrgEdge]:
+        with self._lock:
+            self._require_known_tenant(tenant_id)
+            sql = "SELECT * FROM org_edges WHERE tenant_id = ?"
+            params: list[Any] = [tenant_id.value]
+            if organization_id is not None:
+                _require_tenant(tenant_id, organization_id)
+                sql += " AND organization_id = ?"
+                params.append(organization_id.value)
+            if relation is not None:
+                sql += " AND relation = ?"
+                params.append(relation.value)
+            sql += " ORDER BY id"
+            rows = self._conn.execute(sql, params).fetchall()
+            return [self._org_edge_from_row(row) for row in rows]
+
+    def delete_org_edge(self, tenant_id: TenantId, edge_id: OrgEdgeId) -> None:
+        self.get_org_edge(tenant_id, edge_id)
+        with self._lock:
+            self._conn.execute(
+                "DELETE FROM org_edges WHERE tenant_id = ? AND id = ?",
+                (tenant_id.value, edge_id.value),
+            )
+            self._conn.commit()
+
+    def _org_edge_from_row(self, row: sqlite3.Row) -> OrgEdge:
+        tenant = TenantId(row["tenant_id"])
+        return OrgEdge(
+            id=OrgEdgeId(tenant, row["id"]),
+            tenant_id=tenant,
+            organization_id=OrganizationId(tenant, row["organization_id"]),
+            relation=OrgRelation(row["relation"]),
+            source_kind=OrgNodeKind(row["source_kind"]),
+            source_id=row["source_id"],
+            target_kind=OrgNodeKind(row["target_kind"]),
+            target_id=row["target_id"],
+            attributes=json.loads(row["attributes_json"]),
+        )
+
+    def put_population_declaration(
+        self, declaration: PopulationDeclaration
+    ) -> PopulationDeclaration:
+        with self._lock:
+            self._require_known_tenant(declaration.tenant_id)
+            self.get_population(declaration.tenant_id, declaration.population_id)
+            self._require_organization(
+                declaration.tenant_id, declaration.organization_id
+            )
+            segments = [
+                {
+                    "name": segment.name,
+                    "count": segment.count,
+                    "share": segment.share,
+                    "filters": {
+                        key: list(vals) for key, vals in segment.filters.items()
+                    },
+                    "constraints": dict(segment.constraints),
+                }
+                for segment in declaration.segments
+            ]
+            self._conn.execute(
+                """
+                INSERT INTO population_declarations(
+                    tenant_id, population_id, organization_id, target_size,
+                    backend, segments_json, constraints_json,
+                    include_org_structure, privacy_mode, resolved_counts_json
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(tenant_id, population_id) DO UPDATE SET
+                    organization_id = excluded.organization_id,
+                    target_size = excluded.target_size,
+                    backend = excluded.backend,
+                    segments_json = excluded.segments_json,
+                    constraints_json = excluded.constraints_json,
+                    include_org_structure = excluded.include_org_structure,
+                    privacy_mode = excluded.privacy_mode,
+                    resolved_counts_json = excluded.resolved_counts_json
+                """,
+                (
+                    declaration.tenant_id.value,
+                    declaration.population_id.value,
+                    declaration.organization_id.value,
+                    declaration.target_size,
+                    declaration.backend.value,
+                    _json_dumps(segments),
+                    _json_dumps(list(declaration.constraints)),
+                    1 if declaration.include_org_structure else 0,
+                    declaration.privacy_mode,
+                    _json_dumps(list(declaration.resolved_counts)),
+                ),
+            )
+            self._conn.commit()
+            return declaration
+
+    def get_population_declaration(
+        self, tenant_id: TenantId, population_id: PopulationId
+    ) -> PopulationDeclaration:
+        _require_tenant(tenant_id, population_id)
+        with self._lock:
+            self._require_known_tenant(tenant_id)
+            row = self._conn.execute(
+                """
+                SELECT * FROM population_declarations
+                WHERE tenant_id = ? AND population_id = ?
+                """,
+                (tenant_id.value, population_id.value),
+            ).fetchone()
+            if row is None:
+                raise EntityNotFoundError(
+                    f"unknown population declaration {population_id.value}"
+                )
+            tenant = TenantId(row["tenant_id"])
+            raw_segments = json.loads(row["segments_json"])
+            segments = tuple(
+                PopulationSegment(
+                    name=item["name"],
+                    count=item.get("count"),
+                    share=item.get("share"),
+                    filters=item.get("filters") or {},
+                    constraints=item.get("constraints") or {},
+                )
+                for item in raw_segments
+            )
+            return PopulationDeclaration(
+                tenant_id=tenant,
+                organization_id=OrganizationId(tenant, row["organization_id"]),
+                population_id=PopulationId(tenant, row["population_id"]),
+                target_size=int(row["target_size"]),
+                backend=GenerationBackend(row["backend"]),
+                segments=segments,
+                resolved_counts=tuple(json.loads(row["resolved_counts_json"])),
+                constraints=tuple(json.loads(row["constraints_json"])),
+                include_org_structure=bool(row["include_org_structure"]),
+                privacy_mode=row["privacy_mode"],
+            )

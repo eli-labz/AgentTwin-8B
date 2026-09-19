@@ -1,6 +1,6 @@
 # Enterprise API (`/api/v1`)
 
-Phase 1 control-plane skeleton. This is **not** the Playground API
+Phase 1–2 control-plane skeleton. This is **not** the Playground API
 (`docs/application/playground-api.md`). Harbor jobs and `matraix run` stay
 unchanged.
 
@@ -48,6 +48,13 @@ Equivalent: `uvicorn matraix.enterprise.api:app --port 8090`.
 | `POST` | `/api/v1/personas` | required | Wrap an existing YAML `record` |
 | `GET` | `/api/v1/personas` | required | List; optional `?population_id=` |
 | `GET` | `/api/v1/personas/{id}` | required | Get one persona |
+| `POST` | `/api/v1/org-edges` | required | Create a directed org-graph edge |
+| `GET` | `/api/v1/org-edges` | required | List edges; optional `?relation=` |
+| `GET` | `/api/v1/org-edges/{id}` | required | Get one edge |
+| `DELETE` | `/api/v1/org-edges/{id}` | required | Delete one edge (`204`) |
+| `POST` | `/api/v1/population-declarations` | required | Create population + validate shape |
+| `PUT` | `/api/v1/populations/{id}/declaration` | required | Attach/replace a shape on a population |
+| `GET` | `/api/v1/populations/{id}/declaration` | required | Read the validated shape |
 
 ### Create tenant
 
@@ -78,6 +85,42 @@ Equivalent: `uvicorn matraix.enterprise.api:app --port 8090`.
 `record` is the existing Playground/Harbor persona document. Enterprise
 dimensions remain optional. Synthetic personas are simulation parameters —
 not psychological equivalents of humans.
+
+### Org-graph edge
+
+```json
+{
+  "relation": "reports_to",
+  "source_kind": "persona",
+  "source_id": "per_…",
+  "target_kind": "persona",
+  "target_id": "per_…"
+}
+```
+
+Relations: `reports_to`, `member_of`, `collaborates_with`, `depends_on`,
+`approves`, `escalates_to`, `serves`, `supplies`, `reviews`, `owns_process`,
+`owns_system`. Labeled `process` / `system` targets do not require a stored entity.
+
+### 10k-shaped population declaration
+
+```json
+{
+  "name": "10k workforce",
+  "target_size": 10000,
+  "backend": "coreset_1m",
+  "include_org_structure": true,
+  "segments": [
+    { "name": "engineering", "share": 0.4 },
+    { "name": "support", "share": 0.35 },
+    { "name": "other", "share": 0.25 }
+  ]
+}
+```
+
+`backend` is one of `treiver`, `full_dag`, `coreset_1m`. The API validates
+and stores the shape (`resolved_counts` sum to `target_size`). It does not
+run `persona/synthesis`. Privacy default: `aggregate_stats_then_synthetic`.
 
 ## Persistence
 

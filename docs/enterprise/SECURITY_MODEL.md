@@ -30,6 +30,7 @@ Phase 1 bindings:
 - REST `/api/v1` requires `X-Tenant-Id` on tenant-scoped routes. Lookups construct scoped IDs from that header so another tenant's rows are not returned.
 - Optional `MATRIX_ENTERPRISE_API_TOKEN` (Bearer). Unset = local/dev open API, same posture as Playground.
 - SQLite rows are keyed by `tenant_id`. Cross-tenant `get_*` still raises `CrossTenantAccessError`.
+- Org-graph edges and population declarations are tenant-partitioned the same way.
 
 Future bindings, each tenant-scoped:
 

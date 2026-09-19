@@ -196,6 +196,65 @@ def test_open_enterprise_store_rejects_unknown() -> None:
         open_enterprise_store(backend="postgres")
 
 
+def test_sqlite_org_edge_and_declaration_survive_reopen(tmp_path: Path) -> None:
+    from matraix.enterprise import (
+        GenerationBackend,
+        OrgEdge,
+        OrgEdgeId,
+        OrgNodeKind,
+        OrgRelation,
+        Population,
+        PopulationId,
+        PopulationSegment,
+        build_population_declaration,
+    )
+    from matraix.enterprise.ids import EntityKind
+
+    path = tmp_path / "graph-decl.sqlite"
+    store = SqliteEnterpriseStore(path)
+    tenant, org = create_tenant_with_default_org(store, name="Acme", slug="acme")
+    persona = _persona(tenant, org.id)
+    store.put_persona(persona)
+    edge = store.put_org_edge(
+        OrgEdge(
+            id=OrgEdgeId(tenant.id, new_id(EntityKind.ORG_EDGE)),
+            tenant_id=tenant.id,
+            organization_id=org.id,
+            relation=OrgRelation.SERVES,
+            source_kind=OrgNodeKind.PERSONA,
+            source_id=persona.id.value,
+            target_kind=OrgNodeKind.ORGANIZATION,
+            target_id=org.id.value,
+        )
+    )
+    population = store.put_population(
+        Population(
+            id=PopulationId(tenant.id, "pop_10k"),
+            tenant_id=tenant.id,
+            organization_id=org.id,
+            name="10k",
+            target_size=10_000,
+        )
+    )
+    store.put_population_declaration(
+        build_population_declaration(
+            tenant_id=tenant.id,
+            organization_id=org.id,
+            population_id=population.id,
+            target_size=10_000,
+            backend=GenerationBackend.TREIVER,
+            segments=(PopulationSegment(name="all", count=10_000),),
+        )
+    )
+    store.close()
+    reopened = SqliteEnterpriseStore(path)
+    assert reopened.get_org_edge(tenant.id, edge.id).relation is OrgRelation.SERVES
+    loaded = reopened.get_population_declaration(tenant.id, population.id)
+    assert loaded.backend is GenerationBackend.TREIVER
+    assert loaded.resolved_counts == (10_000,)
+    reopened.close()
+
+
 def test_apply_migrations_is_idempotent(tmp_path: Path) -> None:
     import sqlite3
 
@@ -203,6 +262,6 @@ def test_apply_migrations_is_idempotent(tmp_path: Path) -> None:
     conn = sqlite3.connect(path)
     first = apply_migrations(conn)
     second = apply_migrations(conn)
-    assert 1 in first
+    assert first == [1, 2]
     assert second == []
     conn.close()
