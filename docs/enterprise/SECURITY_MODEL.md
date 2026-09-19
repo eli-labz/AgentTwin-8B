@@ -82,13 +82,13 @@ Intended restrictions (Phase 1+ policy rules): external model access, persistenc
 | Encryption-ready persistence | Domain model has no storage format that precludes it |
 | Provider independence | Credential **names** are env vars; core entities have no cloud fields |
 
-## Identity (target, not Phase 0)
+## Identity (Phase 9)
 
-Authentication: OIDC, OAuth 2.x, SAML-compatible SSO, SCIM-compatible provisioning, service accounts, API tokens, workload identity.
+Authentication: OIDC Authorization Code + PKCE pattern (`GET /api/v1/auth/oidc`), local HS256 JWTs via `MATRIX_ENTERPRISE_OIDC_DEV_SECRET` (CI/dev only), service-account Bearer (`MATRIX_ENTERPRISE_API_TOKEN`), optional session cookie. SCIM-shaped ` /api/v1/scim/Users` hooks provision tenant users. No live IdP is required in CI.
 
-Authorization: RBAC + optional ABAC. Suggested roles: PlatformAdmin, TenantAdmin, SimulationAdmin, Researcher, Evaluator, Developer, Auditor, Viewer. Every permission explicit.
+Authorization: RBAC roles (platform_admin … viewer) plus ABAC hooks (tenant match, inactive, RESTRICTED). Anonymous open-dev requests skip RBAC. Authenticated principals cannot act on another tenant unless `platform_admin`.
 
-Playground must not remain an open CORS API once it binds to this model.
+Playground CORS stays closed in production (`MATRIX_PLAYGROUND_ENV`). See [identity.md](identity.md).
 
 ## Secure defaults (checklist)
 
@@ -100,9 +100,9 @@ From the master prompt — status after Phase 1:
 | Policy vocabulary + sandbox default | Yes (`evaluate_policy`) |
 | Classification enum | Yes |
 | No hard-coded secrets in new code | Yes |
-| API authorization / CSRF / rate limits | Bearer token; `REQUIRE_AUTH` / production; CORS closed in prod; no CSRF / rate limits yet |
-| Audit log | Not yet |
-| Dependency scanning in CI | Not yet |
+| API authorization / CSRF / rate limits | Bearer + OIDC JWT; RBAC when authenticated; CSRF on cookie sessions; rate limits when configured / production |
+| Audit log | Yes — append-only, tenant-scoped, `/api/v1/audit/export` |
+| Dependency scanning in CI | Documented (`pip-audit` / hashed `uv pip compile`); no new CI job yet |
 | Container isolation | Existing Harbor/Docker (unchanged) |
 
 See also root [SECURITY.md](../../SECURITY.md).

@@ -89,8 +89,12 @@ export function EnterpriseConsole({
     else if (active === "models") void loadList("/api/v1/models/catalog");
     else if (active === "evaluations") {
       void loadList("/api/v1/executions");
-    } else if (active === "analytics") {
+    }     else if (active === "analytics") {
       void loadList("/api/v1/executions");
+    } else if (active === "governance") {
+      void loadList("/api/v1/governance/reviews");
+    } else if (active === "audit") {
+      void loadList("/api/v1/audit");
     }
   }, [active, loadList, settings.tenantId, settings.token, settings.base]);
 

@@ -1,6 +1,6 @@
 # Enterprise API (`/api/v1`)
 
-Phase 1–8 control-plane skeleton. This is **not** the Playground API
+Phase 1–9 control-plane skeleton. This is **not** the Playground API
 (`docs/application/playground-api.md`). Harbor jobs and `matraix run` stay
 unchanged.
 
@@ -86,6 +86,14 @@ Equivalent: `uvicorn matraix.enterprise.api:app --port 8090`.
 | `GET` | `/api/v1/executions/{id}/report` | required | Executive report; `?format=json\|csv\|html` |
 | `GET` | `/api/v1/experiments/{id}/report` | required | Experiment rollup report; same formats |
 | `GET` | `/console` | no | Standalone console HTML |
+| `GET` | `/api/v1/auth/oidc` | no | OIDC/SSO metadata pattern (no live IdP) |
+| `GET` | `/api/v1/auth/csrf` | no | Issue CSRF cookie + token |
+| `POST` | `/api/v1/auth/session` | no | Set HttpOnly session cookie |
+| `GET` | `/api/v1/audit` | required | Tenant-scoped append-only audit |
+| `GET` | `/api/v1/audit/export` | required | JSON export (`EnterpriseAuditExport.v1`) |
+| `POST`/`GET` | `/api/v1/governance/reviews` | required | Ingestion / retention / provider reviews |
+| `GET` | `/api/v1/users` | required | RBAC users |
+| `POST`/`GET` | `/api/v1/scim/Users` | required | SCIM-shaped provisioning hooks |
 
 ### Create tenant
 

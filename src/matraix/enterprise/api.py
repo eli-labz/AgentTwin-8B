@@ -16,13 +16,40 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from pydantic import BaseModel, Field
 
+from matraix.enterprise.audit import new_audit_event
+from matraix.enterprise.authz import authorize, permission_for
 from matraix.enterprise.console import console_manifest
+from matraix.enterprise.governance import GovernanceReview, ReviewKind, ReviewStatus
 from matraix.enterprise.http_security import (
+    CSRF_COOKIE,
+    CSRF_HEADER,
+    SESSION_COOKIE,
     auth_is_required,
     configured_token,
+    cookie_secure_defaults,
+    csrf_cookie_defaults,
+    csrf_is_required,
+    decode_session_value,
+    encode_session_value,
     is_public_path,
+    new_csrf_token,
     resolve_cors_origins,
 )
+from matraix.enterprise.identity import (
+    ANONYMOUS,
+    Principal,
+    parse_roles,
+    service_principal,
+    user_from_scim,
+)
+from matraix.enterprise.oidc import (
+    decode_oidc_token,
+    mint_dev_jwt,
+    oidc_dev_secret,
+    oidc_metadata,
+    principal_from_claims,
+)
+from matraix.enterprise.rate_limit import check_rate_limit, is_sensitive_path
 
 from matraix.enterprise.entities import (
     EnterprisePersona,
@@ -40,6 +67,7 @@ from matraix.enterprise.experiment_launch import (
 from matraix.enterprise.graph import OrgEdge, OrgNodeKind, OrgRelation
 from matraix.enterprise.errors import (
     ApprovalRequiredError,
+    AuthorizationError,
     CrossTenantAccessError,
     EnterpriseSchemaError,
     EntityNotFoundError,
@@ -55,6 +83,7 @@ from matraix.enterprise.ids import (
     PersonaId,
     PopulationId,
     TenantId,
+    UserId,
     new_id,
 )
 from matraix.enterprise.model_gateway import (
@@ -270,22 +299,81 @@ class EvaluationSubmitIn(BaseModel):
     include_llm_judge: bool = False
 
 
-def _require_token(request: Request) -> None:
-    if is_public_path(request.url.path):
-        return
-    if not auth_is_required():
-        return
-    expected = configured_token()
-    if expected is None:
-        raise HTTPException(
-            status_code=401,
-            detail="API token is required but MATRIX_ENTERPRISE_API_TOKEN is unset",
-        )
+class DevTokenIn(BaseModel):
+    subject: str = "researcher"
+    tenant_id: str | None = None
+    roles: list[str] = Field(default_factory=lambda: ["researcher"])
+    email: str | None = None
+
+
+class SessionIn(BaseModel):
+    subject: str | None = None
+    tenant_id: str | None = None
+    roles: list[str] = Field(default_factory=list)
+
+
+class GovernanceReviewIn(BaseModel):
+    kind: str
+    title: str
+    notes: str = ""
+    status: str = "draft"
+    sign_off: bool = False
+    details: dict[str, Any] = Field(default_factory=dict)
+
+
+def _bearer_token(request: Request) -> str:
     header = request.headers.get("authorization") or ""
     prefix = "bearer "
-    got = header[len(prefix) :].strip() if header.lower().startswith(prefix) else ""
-    if not got or got != expected:
+    if header.lower().startswith(prefix):
+        return header[len(prefix) :].strip()
+    return ""
+
+
+def _resolve_principal(request: Request) -> Principal:
+    if is_public_path(request.url.path):
+        return ANONYMOUS
+    bearer = _bearer_token(request)
+    expected = configured_token()
+    if bearer and expected and bearer == expected:
+        return service_principal()
+    if bearer and bearer.count(".") == 2 and oidc_dev_secret():
+        try:
+            return principal_from_claims(decode_oidc_token(bearer))
+        except EnterpriseSchemaError:
+            if auth_is_required():
+                raise HTTPException(
+                    status_code=401, detail="invalid or missing API token"
+                ) from None
+    session = request.cookies.get(SESSION_COOKIE)
+    if session:
+        parsed = decode_session_value(session)
+        roles = parse_roles(
+            [part for part in (parsed.get("roles") or "").split(",") if part]
+        )
+        tenant = None
+        if parsed.get("tenant_id"):
+            try:
+                tenant = TenantId(parsed["tenant_id"])
+            except EnterpriseSchemaError:
+                tenant = None
+        return Principal(
+            subject=parsed.get("subject") or "session",
+            source="session",
+            tenant_id=tenant,
+            roles=roles,
+        )
+    if auth_is_required():
+        if expected is None:
+            raise HTTPException(
+                status_code=401,
+                detail="API token is required but MATRIX_ENTERPRISE_API_TOKEN is unset",
+            )
         raise HTTPException(status_code=401, detail="invalid or missing API token")
+    return ANONYMOUS
+
+
+def _require_token(request: Request) -> None:
+    _resolve_principal(request)
 
 
 def _parse_tenant_id(raw: str) -> TenantId:
@@ -401,7 +489,8 @@ def create_enterprise_app(
         description=(
             "Tenant-scoped control plane for tenants, populations, and personas. "
             "Does not replace Playground or Harbor. Synthetic personas are "
-            "simulation parameters, not psychological equivalents of humans."
+            "simulation parameters, not psychological equivalents of humans. "
+            "Phase 9 adds RBAC/OIDC patterns, append-only audit, CSRF, and rate limits."
         ),
         openapi_tags=[
             {"name": "tenants", "description": "Isolation boundaries"},
@@ -440,6 +529,22 @@ def create_enterprise_app(
             {
                 "name": "reports",
                 "description": "Executive reports and exports (synthetic ≠ human research)",
+            },
+            {
+                "name": "auth",
+                "description": "OIDC/SSO patterns, CSRF, and session cookies",
+            },
+            {
+                "name": "audit",
+                "description": "Append-only audit log (not telemetry)",
+            },
+            {
+                "name": "governance",
+                "description": "Ingestion / retention / model-provider reviews",
+            },
+            {
+                "name": "identity",
+                "description": "RBAC users and SCIM-shaped provisioning hooks",
             },
         ],
     )
@@ -487,17 +592,78 @@ def create_enterprise_app(
             content={"detail": str(exc), "worker_kind": exc.kind},
         )
 
+    @app.exception_handler(AuthorizationError)
+    async def _authz(_request: Request, exc: AuthorizationError) -> JSONResponse:
+        return JSONResponse(
+            status_code=403,
+            content={"detail": str(exc), "permission": exc.permission},
+        )
+
     @app.middleware("http")
-    async def _auth_middleware(request: Request, call_next):
+    async def _security_middleware(request: Request, call_next):
         if request.method == "OPTIONS" or is_public_path(request.url.path):
             return await call_next(request)
+        path = request.url.path
+        client = request.client.host if request.client else "local"
+        sensitive = is_sensitive_path(path) or request.method in {
+            "POST",
+            "PUT",
+            "PATCH",
+            "DELETE",
+        }
+        if not check_rate_limit(f"{client}:{path}", sensitive=sensitive):
+            return JSONResponse(status_code=429, content={"detail": "rate limit exceeded"})
         try:
-            _require_token(request)
+            principal = _resolve_principal(request)
         except HTTPException as exc:
             return JSONResponse(
                 status_code=exc.status_code, content={"detail": exc.detail}
             )
-        return await call_next(request)
+        request.state.principal = principal
+        if csrf_is_required(
+            request.method, has_session_cookie=bool(request.cookies.get(SESSION_COOKIE))
+        ):
+            cookie = request.cookies.get(CSRF_COOKIE) or ""
+            header = request.headers.get(CSRF_HEADER) or ""
+            if not cookie or not header or cookie != header:
+                return JSONResponse(
+                    status_code=403, content={"detail": "CSRF token missing or invalid"}
+                )
+        needed = permission_for(request.method, path)
+        if needed is not None and not principal.anonymous:
+            header_tenant = request.headers.get("x-tenant-id")
+            tenant = None
+            if header_tenant:
+                try:
+                    tenant = TenantId(header_tenant)
+                except EnterpriseSchemaError:
+                    tenant = None
+            try:
+                authorize(principal, needed, tenant_id=tenant, resource=path)
+            except AuthorizationError as exc:
+                return JSONResponse(
+                    status_code=403,
+                    content={"detail": str(exc), "permission": exc.permission},
+                )
+        response = await call_next(request)
+        raw_tenant = request.headers.get("x-tenant-id")
+        if raw_tenant and path.startswith("/api/v1"):
+            try:
+                tenant = TenantId(raw_tenant)
+                _store().append_audit(
+                    new_audit_event(
+                        actor=principal.subject,
+                        action=f"{request.method} {path}",
+                        resource=path,
+                        result=str(response.status_code),
+                        tenant_id=tenant,
+                        ip=client,
+                        details={"source": principal.source},
+                    )
+                )
+            except Exception:
+                pass
+        return response
 
     cors_origins = resolve_cors_origins()
     if cors_origins:
@@ -1199,6 +1365,149 @@ def create_enterprise_app(
             ),
             fmt,
         )
+
+    @app.get("/api/v1/auth/oidc", tags=["auth"])
+    def get_oidc_metadata() -> dict[str, Any]:
+        return oidc_metadata()
+
+    @app.get("/api/v1/auth/csrf", tags=["auth"])
+    def get_csrf_token() -> JSONResponse:
+        token = new_csrf_token()
+        response = JSONResponse({"csrf_token": token})
+        response.set_cookie(CSRF_COOKIE, token, **csrf_cookie_defaults())
+        return response
+
+    @app.get("/api/v1/auth/me", tags=["auth"])
+    def get_auth_me(request: Request) -> dict[str, Any]:
+        principal = getattr(request.state, "principal", None) or _resolve_principal(
+            request
+        )
+        return principal.to_dict()
+
+    @app.post("/api/v1/auth/dev-token", tags=["auth"])
+    def create_dev_token(payload: DevTokenIn) -> dict[str, Any]:
+        token = mint_dev_jwt(
+            subject=payload.subject,
+            tenant_id=payload.tenant_id,
+            roles=payload.roles,
+            email=payload.email,
+        )
+        return {"token": token, "token_type": "Bearer"}
+
+    @app.post("/api/v1/auth/session", tags=["auth"])
+    def create_session(request: Request, payload: SessionIn | None = None) -> JSONResponse:
+        principal = getattr(request.state, "principal", None) or _resolve_principal(
+            request
+        )
+        body = payload or SessionIn()
+        subject = body.subject or principal.subject
+        tenant = body.tenant_id or (
+            principal.tenant_id.value if principal.tenant_id else ""
+        )
+        roles = ",".join(body.roles or [role.value for role in principal.roles])
+        csrf = new_csrf_token()
+        response = JSONResponse(
+            {
+                "subject": subject,
+                "tenant_id": tenant or None,
+                "csrf_token": csrf,
+            }
+        )
+        response.set_cookie(
+            SESSION_COOKIE,
+            encode_session_value(subject=subject, tenant_id=tenant, roles=roles),
+            **cookie_secure_defaults(),
+        )
+        response.set_cookie(CSRF_COOKIE, csrf, **csrf_cookie_defaults())
+        return response
+
+    @app.post("/api/v1/auth/logout", tags=["auth"])
+    def logout_session() -> JSONResponse:
+        response = JSONResponse({"ok": True})
+        response.delete_cookie(SESSION_COOKIE, path="/")
+        response.delete_cookie(CSRF_COOKIE, path="/")
+        return response
+
+    @app.get("/api/v1/audit", tags=["audit"])
+    def list_audit(
+        x_tenant_id: Annotated[str | None, Header(alias=TENANT_HEADER)] = None,
+    ) -> list[dict[str, Any]]:
+        tenant = _require_tenant_header(x_tenant_id)
+        return [item.to_dict() for item in _store().list_audit(tenant)]
+
+    @app.get("/api/v1/audit/export", tags=["audit"])
+    def export_audit(
+        x_tenant_id: Annotated[str | None, Header(alias=TENANT_HEADER)] = None,
+    ) -> dict[str, Any]:
+        tenant = _require_tenant_header(x_tenant_id)
+        return {
+            "schema_version": "EnterpriseAuditExport.v1",
+            "tenant_id": tenant.value,
+            "events": _store().export_audit(tenant),
+        }
+
+    @app.post("/api/v1/governance/reviews", tags=["governance"])
+    def create_governance_review(
+        payload: GovernanceReviewIn,
+        request: Request,
+        x_tenant_id: Annotated[str | None, Header(alias=TENANT_HEADER)] = None,
+    ) -> dict[str, Any]:
+        tenant = _require_tenant_header(x_tenant_id)
+        principal = getattr(request.state, "principal", None) or ANONYMOUS
+        review = GovernanceReview(
+            tenant_id=tenant,
+            kind=ReviewKind(payload.kind),
+            title=payload.title,
+            notes=payload.notes,
+            status=ReviewStatus(payload.status),
+            sign_off=payload.sign_off,
+            reviewer=principal.subject,
+            details=payload.details,
+        )
+        return _store().put_governance_review(review).to_dict()
+
+    @app.get("/api/v1/governance/reviews", tags=["governance"])
+    def list_governance_reviews(
+        x_tenant_id: Annotated[str | None, Header(alias=TENANT_HEADER)] = None,
+    ) -> list[dict[str, Any]]:
+        tenant = _require_tenant_header(x_tenant_id)
+        return [item.to_dict() for item in _store().list_governance_reviews(tenant)]
+
+    @app.get("/api/v1/users", tags=["identity"])
+    def list_users(
+        x_tenant_id: Annotated[str | None, Header(alias=TENANT_HEADER)] = None,
+    ) -> list[dict[str, Any]]:
+        tenant = _require_tenant_header(x_tenant_id)
+        return [item.to_dict() for item in _store().list_users(tenant)]
+
+    @app.post("/api/v1/scim/Users", tags=["identity"])
+    def scim_create_user(
+        payload: dict[str, Any],
+        x_tenant_id: Annotated[str | None, Header(alias=TENANT_HEADER)] = None,
+    ) -> dict[str, Any]:
+        tenant = _require_tenant_header(x_tenant_id)
+        user = user_from_scim(tenant, payload)
+        return _store().put_user(user).to_scim()
+
+    @app.get("/api/v1/scim/Users", tags=["identity"])
+    def scim_list_users(
+        x_tenant_id: Annotated[str | None, Header(alias=TENANT_HEADER)] = None,
+    ) -> dict[str, Any]:
+        tenant = _require_tenant_header(x_tenant_id)
+        users = _store().list_users(tenant)
+        return {
+            "schemas": ["urn:ietf:params:scim:api:messages:2.0:ListResponse"],
+            "totalResults": len(users),
+            "Resources": [item.to_scim() for item in users],
+        }
+
+    @app.get("/api/v1/scim/Users/{user_id}", tags=["identity"])
+    def scim_get_user(
+        user_id: str,
+        x_tenant_id: Annotated[str | None, Header(alias=TENANT_HEADER)] = None,
+    ) -> dict[str, Any]:
+        tenant = _require_tenant_header(x_tenant_id)
+        return _store().get_user(tenant, UserId(tenant, user_id)).to_scim()
 
     return app
 

@@ -59,8 +59,6 @@ def console_manifest() -> dict[str, Any]:
         "stub_pages": [
             "tasks",
             "environments",
-            "governance",
-            "audit",
             "infrastructure",
         ],
     }

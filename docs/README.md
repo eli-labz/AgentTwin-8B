@@ -31,7 +31,7 @@ uv run --with mkdocs-material mkdocs serve   # http://127.0.0.1:8000
 
 Optional packages: [packages.md](packages.md).
 
-Enterprise control-plane (Phase 0–8, additive): [enterprise/](enterprise/REPOSITORY_AUDIT.md), [API](enterprise/api.md), [console](enterprise/console.md), [reporting](enterprise/reporting.md), [population builder](enterprise/population-builder.md), [experiments](enterprise/experiments.md), [runtime](enterprise/runtime.md), [telemetry](enterprise/telemetry.md).
+Enterprise control-plane (Phase 0–9, additive): [enterprise/](enterprise/REPOSITORY_AUDIT.md), [API](enterprise/api.md), [console](enterprise/console.md), [reporting](enterprise/reporting.md), [identity](enterprise/identity.md), [population builder](enterprise/population-builder.md), [experiments](enterprise/experiments.md), [runtime](enterprise/runtime.md), [telemetry](enterprise/telemetry.md).
 
 ---
 

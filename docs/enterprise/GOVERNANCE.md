@@ -62,8 +62,9 @@ research. See [telemetry.md](telemetry.md) and [reporting.md](reporting.md).
 
 ## Audit
 
-- Target: append-only log of actor, tenant, action, resource, timestamp, policy, result, trace.
-- Phase 0: domain operations exist only in-process; no durable audit sink yet.
+- Append-only log of actor, tenant, action, resource, timestamp, result (optional policy / trace / ip).
+- Stored separately from Phase 6 telemetry artifacts. SQLite `UPDATE`/`DELETE` are aborted.
+- `GET /api/v1/audit` and `GET /api/v1/audit/export`. Bravo cannot read Alpha events.
 
 ## Risk review
 
@@ -74,4 +75,4 @@ Before exposing an experiment to external models or production-like tools, revie
 - Cost and concurrency limits
 - Whether any cohort is an adversarial/red-team **simulation category** (not a diagnosis)
 
-Sign-off belongs on the experiment record (`ExperimentGovernance.sign_off`). Phase 3 stores it; Phase 9 hardens IAM around who may set it.
+Sign-off belongs on the experiment record (`ExperimentGovernance.sign_off`). Phase 3 stores it; Phase 9 adds `POST /api/v1/governance/reviews` (`ingestion`, `retention`, `model_provider_exposure`) and RBAC so viewers cannot write reviews. See [identity.md](identity.md).

@@ -53,6 +53,18 @@ class ApprovalRequiredError(EnterpriseError, PermissionError):
         super().__init__(message)
 
 
+class AuthorizationError(EnterpriseError, PermissionError):
+    """Raised when RBAC/ABAC denies a principal."""
+
+    def __init__(self, message: str, *, permission: str | None = None) -> None:
+        self.permission = permission
+        super().__init__(message)
+
+
+class AppendOnlyAuditError(EnterpriseError):
+    """Raised when a caller tries to mutate or delete the audit log."""
+
+
 class WorkerNotAvailableError(EnterpriseError):
     """Raised when a named worker kind has no wired adapter."""
 

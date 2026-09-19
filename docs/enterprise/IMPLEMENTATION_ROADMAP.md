@@ -86,7 +86,7 @@ Each phase must leave the repository **runnable**: `matraix smoke`, existing Har
 
 **Exit:** an admin can drive Phase 1–3 flows without YAML-first.
 
-## Phase 8 — Reporting and executive analytics *(this change)*
+## Phase 8 — Reporting and executive analytics *(accepted)*
 
 - Executive views from Phase 6 artifacts: success, risk, subgroup, cost, confidence, drill-down ([reporting.md](reporting.md))
 - Report generator always includes limitations + recommended human validation; `synthetic_equivalent_to_human_research: false`
@@ -96,12 +96,13 @@ Each phase must leave the repository **runnable**: `matraix smoke`, existing Har
 
 **Exit:** one experiment produces an exportable report with reproducibility metadata.
 
-## Phase 9 — Security and governance hardening
+## Phase 9 — Security and governance hardening *(this change)*
 
-- OIDC / SSO / SCIM patterns, RBAC+ABAC
-- Audit log (append-only, separable from telemetry)
-- CSRF, secure cookies, rate limits, dependency scanning, least privilege
-- Governance reviews: ingestion, retention, model-provider exposure
+- OIDC / SSO pattern + SCIM-shaped user hooks without a live IdP ([identity.md](identity.md))
+- RBAC (+ ABAC tenant / classification hooks) on `/api/v1` when a principal is authenticated
+- Append-only audit log (SQLite triggers; not telemetry) + `/audit/export`
+- CSRF on cookie sessions; HttpOnly / SameSite / Secure cookie defaults; rate limits on sensitive routes
+- Governance review records for ingestion, retention, model-provider exposure
 - See [GOVERNANCE.md](GOVERNANCE.md) and [SECURITY.md](../../SECURITY.md)
 
 **Exit:** tenant isolation demonstrated on API + storage; audit export works.
@@ -126,4 +127,4 @@ Each phase must leave the repository **runnable**: `matraix smoke`, existing Har
 
 ## Next implementation target (after this PR)
 
-**Phase 9:** security and governance hardening — OIDC / SSO / SCIM patterns, RBAC+ABAC, append-only audit log (separable from telemetry), CSRF / secure cookies / rate limits, dependency scanning, least privilege, and governance reviews for ingestion / retention / model-provider exposure. Tenant isolation must remain demonstrated on API + storage. See [GOVERNANCE.md](GOVERNANCE.md) and [SECURITY.md](../../SECURITY.md).
+**Phase 10:** performance testing and production packaging — benchmarks (personas/sec, tasks/sec, queue/model/db latency, cost/persona); Docker Compose + Kubernetes references (cloud-neutral core); CI gates (lint, types, unit, integration, security, deps, schema, migrations, image, smoke); production packaging that does not silently break example tasks. Document a scale path from 10 to 1,000,000+ simulated users without one-machine assumptions.

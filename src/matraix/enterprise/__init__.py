@@ -1,4 +1,4 @@
-"""AgentTwin Enterprise domain model (Phase 0–8).
+"""AgentTwin Enterprise domain model (Phase 0–9).
 
 This package is additive. It does not replace Harbor jobs, Playground, or the
 existing 1,290-dimension persona YAML schema. Enterprise fields are optional
@@ -13,7 +13,9 @@ execution planes with a local sandbox worker, telemetry / evaluation
 (synthetic outputs are not human research), a Playground-hosted
 enterprise console (nav + experiment wizard + artifact views), and
 executive reports (JSON / CSV / PDF-ready HTML) that always carry
-limitations plus recommended human validation.
+limitations plus recommended human validation, and Phase 9 IAM
+hardening (OIDC patterns, RBAC+ABAC, append-only audit, CSRF,
+rate limits, governance reviews).
 """
 
 from matraix.enterprise.entities import (
@@ -32,7 +34,9 @@ from matraix.enterprise.entities import (
     Tenant,
 )
 from matraix.enterprise.errors import (
+    AppendOnlyAuditError,
     ApprovalRequiredError,
+    AuthorizationError,
     CrossTenantAccessError,
     EnterpriseSchemaError,
     EntityNotFoundError,
@@ -164,9 +168,25 @@ from matraix.enterprise.store import (
     create_tenant_with_default_org,
     open_enterprise_store,
 )
+from matraix.enterprise.audit import AuditEvent, new_audit_event
+from matraix.enterprise.authz import authorize, permission_for
+from matraix.enterprise.governance import GovernanceReview, ReviewKind, ReviewStatus
+from matraix.enterprise.identity import (
+    ANONYMOUS,
+    EnterpriseUser,
+    Permission,
+    Principal,
+    Role,
+    permissions_for,
+)
+from matraix.enterprise.oidc import mint_dev_jwt, oidc_metadata, principal_from_claims
 
 __all__ = [
+    "ANONYMOUS",
+    "AppendOnlyAuditError",
     "ApprovalRequiredError",
+    "AuditEvent",
+    "AuthorizationError",
     "Artifact",
     "ArtifactId",
     "CohortId",
@@ -225,6 +245,20 @@ __all__ = [
     "render_report",
     "report_from_runtime",
     "REQUIRED_LIMITATIONS",
+    "authorize",
+    "EnterpriseUser",
+    "GovernanceReview",
+    "mint_dev_jwt",
+    "new_audit_event",
+    "oidc_metadata",
+    "Permission",
+    "permission_for",
+    "permissions_for",
+    "Principal",
+    "principal_from_claims",
+    "ReviewKind",
+    "ReviewStatus",
+    "Role",
     "build_executive_report",
     "format_report_csv",
     "format_report_html",

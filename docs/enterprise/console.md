@@ -40,8 +40,9 @@ the tenant header. Every page shows:
 `synthetic_equivalent_to_human_research: false`. Human validation is
 recommended.
 
-See [reporting.md](reporting.md). Tasks, Environments, Governance, Audit,
-and Infrastructure are placeholders.
+See [reporting.md](reporting.md). Governance and Audit load
+`/api/v1/governance/reviews` and `/api/v1/audit`. Tasks, Environments, and
+Infrastructure remain placeholders.
 
 ## Auth and CORS
 

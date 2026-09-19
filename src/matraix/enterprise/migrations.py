@@ -228,6 +228,72 @@ SCHEMA_MIGRATIONS: tuple[tuple[int, str], ...] = (
             ON enterprise_events(tenant_id, execution_id);
         """,
     ),
+    (
+        6,
+        """
+        CREATE TABLE enterprise_users (
+            tenant_id TEXT NOT NULL,
+            id TEXT NOT NULL,
+            username TEXT NOT NULL,
+            email TEXT,
+            external_id TEXT,
+            roles_json TEXT NOT NULL,
+            active INTEGER NOT NULL,
+            attributes_json TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            PRIMARY KEY (tenant_id, id),
+            FOREIGN KEY (tenant_id) REFERENCES tenants(id)
+        );
+
+        CREATE UNIQUE INDEX idx_users_username
+            ON enterprise_users(tenant_id, username);
+        CREATE INDEX idx_users_external
+            ON enterprise_users(tenant_id, external_id);
+
+        CREATE TABLE audit_events (
+            id TEXT PRIMARY KEY,
+            tenant_id TEXT,
+            actor TEXT NOT NULL,
+            action TEXT NOT NULL,
+            resource TEXT NOT NULL,
+            result TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            policy TEXT,
+            trace_id TEXT,
+            ip TEXT,
+            details_json TEXT NOT NULL
+        );
+
+        CREATE INDEX idx_audit_tenant ON audit_events(tenant_id, created_at);
+
+        CREATE TRIGGER audit_events_no_update BEFORE UPDATE ON audit_events
+        BEGIN
+            SELECT RAISE(ABORT, 'audit log is append-only');
+        END;
+
+        CREATE TRIGGER audit_events_no_delete BEFORE DELETE ON audit_events
+        BEGIN
+            SELECT RAISE(ABORT, 'audit log is append-only');
+        END;
+
+        CREATE TABLE governance_reviews (
+            tenant_id TEXT NOT NULL,
+            id TEXT NOT NULL,
+            kind TEXT NOT NULL,
+            status TEXT NOT NULL,
+            title TEXT NOT NULL,
+            notes TEXT NOT NULL,
+            reviewer TEXT,
+            sign_off INTEGER NOT NULL,
+            created_at TEXT NOT NULL,
+            details_json TEXT NOT NULL,
+            PRIMARY KEY (tenant_id, id),
+            FOREIGN KEY (tenant_id) REFERENCES tenants(id)
+        );
+
+        CREATE INDEX idx_governance_tenant ON governance_reviews(tenant_id);
+        """,
+    ),
 )
 
 

@@ -32,6 +32,9 @@ from matraix.enterprise.errors import (
     EntityNotFoundError,
 )
 from matraix.enterprise.graph import OrgEdge, OrgRelation, require_org_node
+from matraix.enterprise.audit import AuditEvent
+from matraix.enterprise.governance import GovernanceReview
+from matraix.enterprise.identity import EnterpriseUser
 from matraix.enterprise.ids import (
     ArtifactId,
     DepartmentId,
@@ -45,6 +48,7 @@ from matraix.enterprise.ids import (
     PopulationId,
     TeamId,
     TenantId,
+    UserId,
 )
 from matraix.enterprise.events import EnterpriseEvent
 from matraix.enterprise.model_gateway import ModelPolicy, default_model_policy
@@ -164,6 +168,28 @@ class EnterpriseRepository(Protocol):
         execution_id: ExecutionId | None = None,
     ) -> list[EnterpriseEvent]: ...
 
+    def put_user(self, user: EnterpriseUser) -> EnterpriseUser: ...
+
+    def get_user(self, tenant_id: TenantId, user_id: UserId) -> EnterpriseUser: ...
+
+    def list_users(self, tenant_id: TenantId) -> list[EnterpriseUser]: ...
+
+    def append_audit(self, event: AuditEvent) -> AuditEvent: ...
+
+    def list_audit(self, tenant_id: TenantId) -> list[AuditEvent]: ...
+
+    def export_audit(self, tenant_id: TenantId) -> list[dict]: ...
+
+    def update_audit(self, event_id: str, **changes: object) -> None: ...
+
+    def delete_audit(self, event_id: str) -> None: ...
+
+    def put_governance_review(self, review: GovernanceReview) -> GovernanceReview: ...
+
+    def list_governance_reviews(
+        self, tenant_id: TenantId
+    ) -> list[GovernanceReview]: ...
+
     def close(self) -> None: ...
 
 
@@ -191,6 +217,9 @@ class _TenantBucket:
     executions: dict[str, ExecutionRecord] = field(default_factory=dict)
     artifacts: dict[str, Artifact] = field(default_factory=dict)
     events: dict[str, EnterpriseEvent] = field(default_factory=dict)
+    users: dict[str, EnterpriseUser] = field(default_factory=dict)
+    audit: list[AuditEvent] = field(default_factory=list)
+    reviews: dict[str, GovernanceReview] = field(default_factory=dict)
 
 
 class InMemoryEnterpriseStore:
@@ -492,6 +521,55 @@ class InMemoryEnterpriseStore:
             _require_tenant(tenant_id, execution_id)
             items = [item for item in items if item.execution_id == execution_id]
         return items
+
+    def put_user(self, user: EnterpriseUser) -> EnterpriseUser:
+        bucket = self._bucket(user.tenant_id)
+        for existing in bucket.users.values():
+            if existing.username == user.username and existing.id != user.id:
+                raise EnterpriseSchemaError(
+                    f"username {user.username!r} already exists in tenant"
+                )
+        bucket.users[user.id.value] = user
+        return user
+
+    def get_user(self, tenant_id: TenantId, user_id: UserId) -> EnterpriseUser:
+        _require_tenant(tenant_id, user_id)
+        try:
+            return self._bucket(tenant_id).users[user_id.value]
+        except KeyError as exc:
+            raise EntityNotFoundError(f"unknown user {user_id.value}") from exc
+
+    def list_users(self, tenant_id: TenantId) -> list[EnterpriseUser]:
+        return list(self._bucket(tenant_id).users.values())
+
+    def append_audit(self, event: AuditEvent) -> AuditEvent:
+        if event.tenant_id is None:
+            raise EnterpriseSchemaError("audit event requires a tenant_id")
+        self._bucket(event.tenant_id).audit.append(event)
+        return event
+
+    def list_audit(self, tenant_id: TenantId) -> list[AuditEvent]:
+        return list(self._bucket(tenant_id).audit)
+
+    def export_audit(self, tenant_id: TenantId) -> list[dict]:
+        return [item.to_dict() for item in self.list_audit(tenant_id)]
+
+    def update_audit(self, event_id: str, **changes: object) -> None:
+        from matraix.enterprise.audit import refuse_audit_mutation
+
+        refuse_audit_mutation()
+
+    def delete_audit(self, event_id: str) -> None:
+        from matraix.enterprise.audit import refuse_audit_mutation
+
+        refuse_audit_mutation()
+
+    def put_governance_review(self, review: GovernanceReview) -> GovernanceReview:
+        self._bucket(review.tenant_id).reviews[review.id] = review
+        return review
+
+    def list_governance_reviews(self, tenant_id: TenantId) -> list[GovernanceReview]:
+        return list(self._bucket(tenant_id).reviews.values())
 
     def close(self) -> None:
         return None

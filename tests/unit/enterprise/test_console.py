@@ -55,6 +55,8 @@ def test_console_html_and_manifest_are_public() -> None:
     assert "not" in page.text.lower() and "human research" in page.text.lower()
     assert "/api/v1/executions/" in page.text and "/report?format=" in page.text
     assert "recommended_human_validation" in page.text
+    assert "/api/v1/audit" in page.text
+    assert "/api/v1/governance/reviews" in page.text
     spec = client.get("/openapi.json").json()
     assert "/api/v1/console/manifest" in spec["paths"]
     manifest = client.get("/api/v1/console/manifest")

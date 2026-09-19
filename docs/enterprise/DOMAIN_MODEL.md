@@ -172,6 +172,10 @@ OTel-shaped traces (`InMemoryTracer`), hierarchical metrics (`MetricsRegistry`: 
 
 `ExecutiveReport` (`matraix.enterprise.reporting`, schema `EnterpriseExecutiveReport.v1`) rolls Phase 6 artifacts into success, risk, subgroup, cost, and confidence views. `to_dict()` always sets `recommended_human_validation: true` and `synthetic_equivalent_to_human_research: false`. Exports are JSON, CSV, and PDF-ready HTML. Reports are generated on the fly (no extra migration). See [reporting.md](reporting.md).
 
+### Identity / audit / governance
+
+`EnterpriseUser`, `Principal`, and `Role` live in `matraix.enterprise.identity`. `AuditEvent` is append-only and is **not** a telemetry artifact. `GovernanceReview` records ingestion / retention / model-provider exposure reviews. See [identity.md](identity.md).
+
 ## Persistence
 
 `EnterpriseRepository` is the contract. Two backends:

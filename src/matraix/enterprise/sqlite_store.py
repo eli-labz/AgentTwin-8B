@@ -36,6 +36,9 @@ from matraix.enterprise.graph import (
     require_org_node,
 )
 from matraix.enterprise.events import EnterpriseEvent, event_from_dict
+from matraix.enterprise.audit import AuditEvent
+from matraix.enterprise.governance import GovernanceReview, ReviewKind, ReviewStatus
+from matraix.enterprise.identity import EnterpriseUser, parse_roles
 from matraix.enterprise.ids import (
     ArtifactId,
     DepartmentId,
@@ -47,6 +50,7 @@ from matraix.enterprise.ids import (
     PopulationId,
     TeamId,
     TenantId,
+    UserId,
 )
 from matraix.enterprise.population_builder import (
     GenerationBackend,
@@ -1116,3 +1120,202 @@ class SqliteEnterpriseStore:
                 "created_at": row["created_at"],
             }
         )
+
+    def put_user(self, user: EnterpriseUser) -> EnterpriseUser:
+        with self._lock:
+            self._require_known_tenant(user.tenant_id)
+            self._conn.execute(
+                """
+                INSERT INTO enterprise_users(
+                    tenant_id, id, username, email, external_id, roles_json,
+                    active, attributes_json, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(tenant_id, id) DO UPDATE SET
+                    username=excluded.username,
+                    email=excluded.email,
+                    external_id=excluded.external_id,
+                    roles_json=excluded.roles_json,
+                    active=excluded.active,
+                    attributes_json=excluded.attributes_json
+                """,
+                (
+                    user.tenant_id.value,
+                    user.id.value,
+                    user.username,
+                    user.email,
+                    user.external_id,
+                    _json_dumps([role.value for role in user.roles]),
+                    1 if user.active else 0,
+                    _json_dumps(user.attributes),
+                    user.created_at,
+                ),
+            )
+            self._conn.commit()
+            return user
+
+    def get_user(self, tenant_id: TenantId, user_id: UserId) -> EnterpriseUser:
+        _require_tenant(tenant_id, user_id)
+        with self._lock:
+            self._require_known_tenant(tenant_id)
+            row = self._conn.execute(
+                "SELECT * FROM enterprise_users WHERE tenant_id = ? AND id = ?",
+                (tenant_id.value, user_id.value),
+            ).fetchone()
+            if row is None:
+                raise EntityNotFoundError(f"unknown user {user_id.value}")
+            return self._user_from_row(row)
+
+    def list_users(self, tenant_id: TenantId) -> list[EnterpriseUser]:
+        with self._lock:
+            self._require_known_tenant(tenant_id)
+            rows = self._conn.execute(
+                "SELECT * FROM enterprise_users WHERE tenant_id = ? ORDER BY username",
+                (tenant_id.value,),
+            ).fetchall()
+            return [self._user_from_row(row) for row in rows]
+
+    def _user_from_row(self, row: sqlite3.Row) -> EnterpriseUser:
+        tenant = TenantId(row["tenant_id"])
+        return EnterpriseUser(
+            id=UserId(tenant, row["id"]),
+            tenant_id=tenant,
+            username=row["username"],
+            email=row["email"],
+            external_id=row["external_id"],
+            roles=parse_roles(json.loads(row["roles_json"])),
+            active=bool(row["active"]),
+            attributes=json.loads(row["attributes_json"] or "{}"),
+            created_at=row["created_at"],
+        )
+
+    def append_audit(self, event: AuditEvent) -> AuditEvent:
+        if event.tenant_id is None:
+            raise EnterpriseSchemaError("audit event requires a tenant_id")
+        with self._lock:
+            self._require_known_tenant(event.tenant_id)
+            self._conn.execute(
+                """
+                INSERT INTO audit_events(
+                    id, tenant_id, actor, action, resource, result, created_at,
+                    policy, trace_id, ip, details_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    event.id,
+                    event.tenant_id.value,
+                    event.actor,
+                    event.action,
+                    event.resource,
+                    event.result,
+                    event.created_at,
+                    event.policy,
+                    event.trace_id,
+                    event.ip,
+                    _json_dumps(event.details),
+                ),
+            )
+            self._conn.commit()
+            return event
+
+    def list_audit(self, tenant_id: TenantId) -> list[AuditEvent]:
+        with self._lock:
+            self._require_known_tenant(tenant_id)
+            rows = self._conn.execute(
+                """
+                SELECT * FROM audit_events
+                WHERE tenant_id = ?
+                ORDER BY created_at, id
+                """,
+                (tenant_id.value,),
+            ).fetchall()
+            return [self._audit_from_row(row) for row in rows]
+
+    def export_audit(self, tenant_id: TenantId) -> list[dict]:
+        return [item.to_dict() for item in self.list_audit(tenant_id)]
+
+    def update_audit(self, event_id: str, **changes: object) -> None:
+        from matraix.enterprise.audit import refuse_audit_mutation
+
+        refuse_audit_mutation()
+
+    def delete_audit(self, event_id: str) -> None:
+        from matraix.enterprise.audit import refuse_audit_mutation
+
+        refuse_audit_mutation()
+
+    def _audit_from_row(self, row: sqlite3.Row) -> AuditEvent:
+        tenant = TenantId(row["tenant_id"]) if row["tenant_id"] else None
+        return AuditEvent(
+            id=row["id"],
+            tenant_id=tenant,
+            actor=row["actor"],
+            action=row["action"],
+            resource=row["resource"],
+            result=row["result"],
+            created_at=row["created_at"],
+            policy=row["policy"],
+            trace_id=row["trace_id"],
+            ip=row["ip"],
+            details=json.loads(row["details_json"] or "{}"),
+        )
+
+    def put_governance_review(self, review: GovernanceReview) -> GovernanceReview:
+        with self._lock:
+            self._require_known_tenant(review.tenant_id)
+            self._conn.execute(
+                """
+                INSERT INTO governance_reviews(
+                    tenant_id, id, kind, status, title, notes, reviewer,
+                    sign_off, created_at, details_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(tenant_id, id) DO UPDATE SET
+                    kind=excluded.kind,
+                    status=excluded.status,
+                    title=excluded.title,
+                    notes=excluded.notes,
+                    reviewer=excluded.reviewer,
+                    sign_off=excluded.sign_off,
+                    details_json=excluded.details_json
+                """,
+                (
+                    review.tenant_id.value,
+                    review.id,
+                    review.kind.value,
+                    review.status.value,
+                    review.title,
+                    review.notes,
+                    review.reviewer,
+                    1 if review.sign_off else 0,
+                    review.created_at,
+                    _json_dumps(review.details),
+                ),
+            )
+            self._conn.commit()
+            return review
+
+    def list_governance_reviews(self, tenant_id: TenantId) -> list[GovernanceReview]:
+        with self._lock:
+            self._require_known_tenant(tenant_id)
+            rows = self._conn.execute(
+                """
+                SELECT * FROM governance_reviews
+                WHERE tenant_id = ?
+                ORDER BY created_at, id
+                """,
+                (tenant_id.value,),
+            ).fetchall()
+            return [
+                GovernanceReview(
+                    id=row["id"],
+                    tenant_id=TenantId(row["tenant_id"]),
+                    kind=ReviewKind(row["kind"]),
+                    status=ReviewStatus(row["status"]),
+                    title=row["title"],
+                    notes=row["notes"],
+                    reviewer=row["reviewer"],
+                    sign_off=bool(row["sign_off"]),
+                    created_at=row["created_at"],
+                    details=json.loads(row["details_json"] or "{}"),
+                )
+                for row in rows
+            ]

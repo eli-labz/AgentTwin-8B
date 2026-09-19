@@ -202,6 +202,30 @@
             <pre>${JSON.stringify({ evaluation: evalBody, hierarchy: metrics && metrics.hierarchy, failure }, null, 2)}</pre></div>`;
           return;
         }
+        if (state.page === "governance") {
+          const reviews = state.tenantId ? await api("/api/v1/governance/reviews") : [];
+          main.innerHTML = `<h1>Governance</h1>${disclaimer()}
+            <div class="card"><p>Reviews for ingestion, retention, and model-provider exposure.</p>
+            <p>synthetic_equivalent_to_human_research: <strong>false</strong></p>
+            <pre>${JSON.stringify(reviews, null, 2)}</pre></div>`;
+          return;
+        }
+        if (state.page === "audit") {
+          const events = state.tenantId ? await api("/api/v1/audit") : [];
+          main.innerHTML = `<h1>Audit</h1>${disclaimer()}
+            <div class="card"><p>Append-only log (not telemetry). Export: <button class="ghost" id="exp">json</button></p>
+            <pre>${JSON.stringify(events, null, 2)}</pre></div>`;
+          const exp = document.getElementById("exp");
+          if (exp) exp.onclick = async () => {
+            const body = await api("/api/v1/audit/export");
+            const blob = new Blob([JSON.stringify(body, null, 2)], {type: "application/json"});
+            const a = document.createElement("a");
+            a.href = URL.createObjectURL(blob);
+            a.download = "enterprise-audit.json";
+            a.click();
+          };
+          return;
+        }
         if (["organizations","populations","personas"].includes(state.page)) {
           const path = { organizations: "/api/v1/organizations", populations: "/api/v1/populations", personas: "/api/v1/personas" }[state.page];
           const rows = state.tenantId ? await api(path) : [];

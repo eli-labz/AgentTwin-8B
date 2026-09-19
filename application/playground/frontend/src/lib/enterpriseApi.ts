@@ -154,5 +154,5 @@ export const FALLBACK_MANIFEST: EnterpriseManifest = {
   recommended_human_validation: true,
   synthetic_equivalent_to_human_research: false,
   default_policy: "SANDBOX_ONLY",
-  stub_pages: ["tasks", "environments", "governance", "audit", "infrastructure"],
+  stub_pages: ["tasks", "environments", "infrastructure"],
 };
