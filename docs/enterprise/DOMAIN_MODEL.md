@@ -151,8 +151,13 @@ Control-plane **launch record** (`Experiment`, alias `EnterpriseExperiment`). De
 ### Policy
 
 `PolicyDecision`: `ALLOW`, `DENY`, `ALLOW_WITH_REDACTION`, `ALLOW_WITH_APPROVAL`, `SANDBOX_ONLY`.  
-`PolicyRequest` carries tenant, action, resource, optional persona/provider/classification.  
-`default_simulation_decision` always returns `SANDBOX_ONLY`.
+`PolicyRequest` carries tenant, action, resource, optional persona/provider/classification/destination.  
+`default_simulation_decision` always returns `SANDBOX_ONLY`.  
+`evaluate_policy` is the gateway: forbidden providers and `RESTRICTED` + external are `DENY`; the default remains `SANDBOX_ONLY`. See [model-gateway.md](model-gateway.md).
+
+### Model gateway
+
+`ModelProvider` / `ModelRequest` / `ModelResponse` / `ModelCapabilities` / `ModelUsage` / `ModelPolicy` live in `matraix.enterprise.model_gateway`. The catalog names providers (sandbox, anthropic, openai, gemini, eu-anthropic, local-ollama) without importing SDKs. Routing uses capability, allow-list, residency, cost, latency, task complexity, and tenant policy. Completions default to the sandbox mock.
 
 ## Persistence
 

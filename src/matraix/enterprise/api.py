@@ -30,9 +30,11 @@ from matraix.enterprise.experiment_launch import (
 )
 from matraix.enterprise.graph import OrgEdge, OrgNodeKind, OrgRelation
 from matraix.enterprise.errors import (
+    ApprovalRequiredError,
     CrossTenantAccessError,
     EnterpriseSchemaError,
     EntityNotFoundError,
+    PolicyDeniedError,
 )
 from matraix.enterprise.ids import (
     EntityKind,
@@ -43,6 +45,19 @@ from matraix.enterprise.ids import (
     PopulationId,
     TenantId,
     new_id,
+)
+from matraix.enterprise.model_gateway import (
+    ModelPolicy,
+    ModelRequest,
+    catalog_for_policy,
+    complete_model,
+    resolve_model_policy,
+    route_model,
+)
+from matraix.enterprise.policy import (
+    DataClassification,
+    PolicyRequest,
+    evaluate_policy,
 )
 from matraix.enterprise.population_builder import (
     PopulationSegment,
@@ -186,6 +201,47 @@ class ExperimentCreate(BaseModel):
     variables: dict[str, str] = Field(default_factory=dict)
     execution_budget: dict[str, Any] = Field(default_factory=dict)
     governance: dict[str, Any] = Field(default_factory=dict)
+
+
+class PolicyEvaluateIn(BaseModel):
+    action: str
+    resource: str
+    persona_id: str | None = None
+    environment: str | None = None
+    tool: str | None = None
+    model_provider: str | None = None
+    data_classification: str = "INTERNAL"
+    destination: str | None = None
+    approved: bool = False
+    attributes: dict[str, str] = Field(default_factory=dict)
+
+
+class ModelRouteIn(BaseModel):
+    action: str = "complete"
+    resource: str = "model.complete"
+    model_provider: str | None = None
+    required_capability: str = "chat"
+    residency: str | None = None
+    task_complexity: str = "standard"
+    data_classification: str = "INTERNAL"
+    destination: str | None = None
+    max_tokens: int = 256
+    approved: bool = False
+    messages: list[dict[str, str]] = Field(default_factory=list)
+    persona_id: str | None = None
+
+
+class ModelPolicyIn(BaseModel):
+    allowed_providers: list[str] = Field(default_factory=list)
+    denied_providers: list[str] = Field(default_factory=list)
+    required_residency: str | None = None
+    max_cost_score: float | None = None
+    max_latency_ms: int | None = None
+    allowed_capabilities: list[str] = Field(default_factory=list)
+    allow_external: bool = False
+    allow_live: bool = False
+    default_decision: str = "SANDBOX_ONLY"
+    denied_actions: list[str] = Field(default_factory=list)
 
 
 def _configured_token() -> str | None:
@@ -333,6 +389,14 @@ def create_enterprise_app(
                 "name": "experiments",
                 "description": "Launch records mapped onto Harbor job YAML (does not replace Job)",
             },
+            {
+                "name": "policy",
+                "description": "Policy gateway (SANDBOX_ONLY default; every execution is evaluated)",
+            },
+            {
+                "name": "models",
+                "description": "Provider-independent model gateway beside LiteLLM",
+            },
         ],
     )
     app.state.store = repository
@@ -348,6 +412,28 @@ def create_enterprise_app(
     @app.exception_handler(EnterpriseSchemaError)
     async def _schema(_request: Request, exc: EnterpriseSchemaError) -> JSONResponse:
         return JSONResponse(status_code=400, content={"detail": str(exc)})
+
+    @app.exception_handler(PolicyDeniedError)
+    async def _denied(_request: Request, exc: PolicyDeniedError) -> JSONResponse:
+        return JSONResponse(
+            status_code=403,
+            content={
+                "detail": str(exc),
+                "decision": exc.decision,
+                "reasons": list(exc.reasons),
+            },
+        )
+
+    @app.exception_handler(ApprovalRequiredError)
+    async def _approval(_request: Request, exc: ApprovalRequiredError) -> JSONResponse:
+        return JSONResponse(
+            status_code=409,
+            content={
+                "detail": str(exc),
+                "decision": exc.decision,
+                "reasons": list(exc.reasons),
+            },
+        )
 
     @app.middleware("http")
     async def _auth_middleware(request: Request, call_next):
@@ -733,6 +819,122 @@ def create_enterprise_app(
             experiment,
             persona_paths=_persona_paths(tenant, experiment.population_ids),
         )
+
+    def _model_policy_for(tenant: TenantId) -> ModelPolicy:
+        return resolve_model_policy(tenant, _store().get_model_policy(tenant))
+
+    def _model_request(tenant: TenantId, payload: ModelRouteIn) -> ModelRequest:
+        persona = PersonaId(tenant, payload.persona_id) if payload.persona_id else None
+        try:
+            classification = DataClassification(payload.data_classification)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=400,
+                detail=f"unknown data classification {payload.data_classification!r}",
+            ) from exc
+        try:
+            return ModelRequest(
+                tenant_id=tenant,
+                messages=tuple(payload.messages),
+                action=payload.action,
+                resource=payload.resource,
+                persona_id=persona,
+                model_provider=payload.model_provider,
+                required_capability=payload.required_capability,
+                residency=payload.residency,
+                task_complexity=payload.task_complexity,
+                data_classification=classification,
+                destination=payload.destination,
+                max_tokens=payload.max_tokens,
+                approved=payload.approved,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/api/v1/policy/evaluate", tags=["policy"])
+    def evaluate_execution_policy(
+        payload: PolicyEvaluateIn,
+        x_tenant_id: Annotated[str | None, Header(alias=TENANT_HEADER)] = None,
+    ) -> dict[str, Any]:
+        tenant = _require_tenant_header(x_tenant_id)
+        try:
+            classification = DataClassification(payload.data_classification)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=400,
+                detail=f"unknown data classification {payload.data_classification!r}",
+            ) from exc
+        persona = PersonaId(tenant, payload.persona_id) if payload.persona_id else None
+        request = PolicyRequest(
+            tenant_id=tenant,
+            action=payload.action,
+            resource=payload.resource,
+            persona_id=persona,
+            environment=payload.environment,
+            tool=payload.tool,
+            model_provider=payload.model_provider,
+            data_classification=classification,
+            destination=payload.destination,
+            approved=payload.approved,
+            attributes=tuple(payload.attributes.items()),
+        )
+        return evaluate_policy(request, _model_policy_for(tenant)).to_dict()
+
+    @app.get("/api/v1/model-policy", tags=["models"])
+    def get_model_policy(
+        x_tenant_id: Annotated[str | None, Header(alias=TENANT_HEADER)] = None,
+    ) -> dict[str, Any]:
+        tenant = _require_tenant_header(x_tenant_id)
+        return _store().get_model_policy(tenant).to_dict()
+
+    @app.put("/api/v1/model-policy", tags=["models"])
+    def put_model_policy(
+        payload: ModelPolicyIn,
+        x_tenant_id: Annotated[str | None, Header(alias=TENANT_HEADER)] = None,
+    ) -> dict[str, Any]:
+        tenant = _require_tenant_header(x_tenant_id)
+        try:
+            policy = ModelPolicy(
+                tenant_id=tenant,
+                allowed_providers=tuple(payload.allowed_providers),
+                denied_providers=tuple(payload.denied_providers),
+                required_residency=payload.required_residency,
+                max_cost_score=payload.max_cost_score,
+                max_latency_ms=payload.max_latency_ms,
+                allowed_capabilities=tuple(payload.allowed_capabilities),
+                allow_external=payload.allow_external,
+                allow_live=payload.allow_live,
+                default_decision=payload.default_decision,
+                denied_actions=tuple(payload.denied_actions),
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return _store().put_model_policy(policy).to_dict()
+
+    @app.get("/api/v1/models/catalog", tags=["models"])
+    def list_model_catalog(
+        x_tenant_id: Annotated[str | None, Header(alias=TENANT_HEADER)] = None,
+    ) -> list[dict[str, Any]]:
+        tenant = _require_tenant_header(x_tenant_id)
+        return catalog_for_policy(_model_policy_for(tenant))
+
+    @app.post("/api/v1/models/route", tags=["models"])
+    def route_model_request(
+        payload: ModelRouteIn,
+        x_tenant_id: Annotated[str | None, Header(alias=TENANT_HEADER)] = None,
+    ) -> dict[str, Any]:
+        tenant = _require_tenant_header(x_tenant_id)
+        return route_model(_model_request(tenant, payload), _model_policy_for(tenant)).to_dict()
+
+    @app.post("/api/v1/models/complete", tags=["models"])
+    def complete_model_request(
+        payload: ModelRouteIn,
+        x_tenant_id: Annotated[str | None, Header(alias=TENANT_HEADER)] = None,
+    ) -> dict[str, Any]:
+        tenant = _require_tenant_header(x_tenant_id)
+        return complete_model(
+            _model_request(tenant, payload), _model_policy_for(tenant)
+        ).to_dict()
 
     return app
 

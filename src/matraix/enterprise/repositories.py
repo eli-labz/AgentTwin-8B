@@ -40,6 +40,7 @@ from matraix.enterprise.ids import (
     TeamId,
     TenantId,
 )
+from matraix.enterprise.model_gateway import ModelPolicy, default_model_policy
 from matraix.enterprise.population_builder import PopulationDeclaration
 
 T = TypeVar("T")
@@ -122,6 +123,10 @@ class EnterpriseRepository(Protocol):
         self, tenant_id: TenantId, population_id: PopulationId
     ) -> PopulationDeclaration: ...
 
+    def put_model_policy(self, policy: ModelPolicy) -> ModelPolicy: ...
+
+    def get_model_policy(self, tenant_id: TenantId) -> ModelPolicy: ...
+
     def close(self) -> None: ...
 
 
@@ -145,6 +150,7 @@ class _TenantBucket:
     population_declarations: dict[str, PopulationDeclaration] = field(
         default_factory=dict
     )
+    model_policy: ModelPolicy | None = None
 
 
 class InMemoryEnterpriseStore:
@@ -376,6 +382,17 @@ class InMemoryEnterpriseStore:
             raise EntityNotFoundError(
                 f"unknown population declaration {population_id.value}"
             ) from exc
+
+    def put_model_policy(self, policy: ModelPolicy) -> ModelPolicy:
+        bucket = self._bucket(policy.tenant_id)
+        bucket.model_policy = policy
+        return policy
+
+    def get_model_policy(self, tenant_id: TenantId) -> ModelPolicy:
+        stored = self._bucket(tenant_id).model_policy
+        if stored is None:
+            return default_model_policy(tenant_id)
+        return stored
 
     def close(self) -> None:
         return None

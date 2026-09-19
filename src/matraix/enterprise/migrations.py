@@ -150,6 +150,25 @@ SCHEMA_MIGRATIONS: tuple[tuple[int, str], ...] = (
         ALTER TABLE experiments ADD COLUMN launch_json TEXT;
         """,
     ),
+    (
+        4,
+        """
+        CREATE TABLE tenant_model_policies (
+            tenant_id TEXT PRIMARY KEY,
+            allowed_providers_json TEXT NOT NULL,
+            denied_providers_json TEXT NOT NULL,
+            required_residency TEXT,
+            max_cost_score REAL,
+            max_latency_ms INTEGER,
+            allowed_capabilities_json TEXT NOT NULL,
+            allow_external INTEGER NOT NULL,
+            allow_live INTEGER NOT NULL,
+            default_decision TEXT NOT NULL,
+            denied_actions_json TEXT NOT NULL,
+            FOREIGN KEY (tenant_id) REFERENCES tenants(id)
+        );
+        """,
+    ),
 )
 
 

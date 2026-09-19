@@ -1,6 +1,6 @@
 # Target Architecture — AgentTwin Enterprise
 
-This is the target modular platform. Phase 0 shipped **contracts and a tenant-scoped domain model**. Phase 1 added **persistence + `/api/v1`**. Phase 2 added **org-graph edges and a population-shape builder**. Phase 3 adds **experiment launch records** mapped onto Harbor job YAML. Harbor, Playground, and the 1,290-dimension persona stack remain the simulation engines.
+This is the target modular platform. Phase 0 shipped **contracts and a tenant-scoped domain model**. Phase 1 added **persistence + `/api/v1`**. Phase 2 added **org-graph edges and a population-shape builder**. Phase 3 added **experiment launch records** mapped onto Harbor job YAML. Phase 4 adds the **model and policy gateways** beside LiteLLM. Harbor, Playground, and the 1,290-dimension persona stack remain the simulation engines.
 
 ## Layered platform
 
@@ -38,8 +38,8 @@ This is the target modular platform. Phase 0 shipped **contracts and a tenant-sc
 | Org twin | 1,290-dim persona + optional enterprise fields | Org graph + tenancy on every record |
 | Simulation runtime | Harbor `Job` / `Trial` / `BaseAgent` | Same runtime, tenant context on traces |
 | Task / environment | `application/tasks` + Harbor environments | Workflow contracts; sandboxed enterprise adapters |
-| Model gateway | LiteLLM + `provider_credentials` | `ModelProvider` / `ModelPolicy` / residency |
-| Policy / identity | Task network policy; Harbor GitHub OAuth | RBAC+ABAC, policy decisions, OIDC |
+| Model gateway | LiteLLM + `provider_credentials` (unchanged) | `ModelProvider` / `ModelPolicy` / residency routing |
+| Policy / identity | Task network policy; Harbor GitHub OAuth | `evaluate_policy` decisions; RBAC+ABAC / OIDC later |
 | Telemetry | `JobResult`, structured_output, `matraix results` | OTel, hierarchical metrics, audit log |
 | Data / artifacts | `jobs/`, persona datasets, Parquet | Tenant-prefixed stores; encryption-ready |
 | Infrastructure | local / Modal / GKE / use.computer | Worker abstraction; cloud-neutral core |
@@ -118,7 +118,7 @@ Contracts are **interfaces**, not a rewrite. Phase 0 ships the first Python type
 4. Tenancy is enforced in the domain/store, not only in UI filters.
 5. Existing Harbor jobs remain runnable without a tenant (legacy path) until Phase 1 APIs wrap them.
 
-## Phase 0–3 slice actually implemented
+## Phase 0–4 slice actually implemented
 
 - Typed IDs and entities: `src/matraix/enterprise/`
 - `EnterpriseRepository` with in-memory (default) and SQLite backends
@@ -127,7 +127,8 @@ Contracts are **interfaces**, not a rewrite. Phase 0 ships the first Python type
 - Optional `tenant_id` on generated job `.meta.json` sidecars
 - Org-graph edges + population-shape declarations (Treiver / Full-DAG / 1M named, not rewritten)
 - Experiment launch records + Harbor job YAML mapping + pre-run cost estimate
-- Policy enums + sandbox default
+- Policy enums + `evaluate_policy` gateway (`SANDBOX_ONLY` default; DENY / ALLOW / redaction / approval)
+- Model gateway types + catalog routing beside LiteLLM (no provider SDK import)
 - Tests under `tests/unit/enterprise`, `tests/multitenancy`, `tests/security`
 
-Not yet: model/policy gateway, Harbor filesystem tenancy, console navigation.
+Not yet: Harbor filesystem tenancy, live LiteLLM adapter behind the gateway, console navigation.

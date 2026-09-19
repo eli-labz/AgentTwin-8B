@@ -50,9 +50,11 @@ Every future execution must evaluate a `PolicyRequest` and receive a `PolicyDeci
 | `ALLOW_WITH_APPROVAL` | Hold for a human gate |
 | `SANDBOX_ONLY` | Simulation / mock integrations only |
 
-**Default for enterprise tests:** `SANDBOX_ONLY` (`default_simulation_decision`). Live production actions require explicit policy and authorization (not implemented in Phase 0).
+**Default for enterprise tests:** `SANDBOX_ONLY` (`default_simulation_decision` and `evaluate_policy`). Live production actions require explicit policy (`allow_external` / `allow_live`) and, for consequential writes, `ALLOW_WITH_APPROVAL`.
 
-Policy inputs (contract): tenant, persona, task, environment, tool, data classification, model provider, action, resource.
+Policy inputs (contract): tenant, persona, task, environment, tool, data classification, model provider, destination, action, resource.
+
+Phase 4 enforcement: `evaluate_policy` + `complete_model`. Forbidden actions, deny-listed providers, and `RESTRICTED` data sent externally are `DENY`. The model gateway does not call LiteLLM or print credentials.
 
 ## Data classification
 
@@ -91,7 +93,7 @@ From the master prompt — status after Phase 1:
 | Requirement | Phase 1 |
 |-------------|---------|
 | Tenant isolation in domain/store | Yes (in-memory + SQLite) |
-| Policy vocabulary + sandbox default | Yes |
+| Policy vocabulary + sandbox default | Yes (`evaluate_policy`) |
 | Classification enum | Yes |
 | No hard-coded secrets in new code | Yes |
 | API authorization / CSRF / rate limits | Optional Bearer token; no CSRF / rate limits yet |

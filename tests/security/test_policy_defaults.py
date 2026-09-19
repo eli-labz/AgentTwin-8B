@@ -6,6 +6,7 @@ from matraix.enterprise.policy import (
     PolicyDecision,
     PolicyRequest,
     default_simulation_decision,
+    evaluate_policy,
 )
 
 
@@ -17,6 +18,7 @@ def test_default_enterprise_action_is_sandbox_only() -> None:
         data_classification=DataClassification.CONFIDENTIAL,
     )
     assert default_simulation_decision(request) is PolicyDecision.SANDBOX_ONLY
+    assert evaluate_policy(request).decision is PolicyDecision.SANDBOX_ONLY
     assert set(PolicyDecision) == {
         PolicyDecision.ALLOW,
         PolicyDecision.DENY,

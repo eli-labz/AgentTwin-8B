@@ -21,3 +21,33 @@ class CrossTenantAccessError(EnterpriseError, PermissionError):
 
 class EntityNotFoundError(EnterpriseError, KeyError):
     """Raised when a tenant-scoped lookup misses inside that tenant."""
+
+
+class PolicyDeniedError(EnterpriseError, PermissionError):
+    """Raised when the policy gateway returns :attr:`PolicyDecision.DENY`."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        reasons: tuple[str, ...] = (),
+        decision: str = "DENY",
+    ) -> None:
+        self.reasons = reasons
+        self.decision = decision
+        super().__init__(message)
+
+
+class ApprovalRequiredError(EnterpriseError, PermissionError):
+    """Raised when a consequential action needs a human gate before proceeding."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        reasons: tuple[str, ...] = (),
+        decision: str = "ALLOW_WITH_APPROVAL",
+    ) -> None:
+        self.reasons = reasons
+        self.decision = decision
+        super().__init__(message)

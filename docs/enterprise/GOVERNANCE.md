@@ -19,11 +19,11 @@ Governance is part of the product, not a later overlay. This document states **r
 
 - Missing attributes stay missing — do not impute to “complete” a person.
 - Protections against reconstructing source individuals belong in Phase 2 validation (distribution tests, uniqueness caps). Limitations must appear on generated reports.
-- `RESTRICTED` data must not be sent to external model providers without an explicit `ALLOW` / `ALLOW_WITH_REDACTION` decision (policy engine: Phase 4).
+- `RESTRICTED` data must not be sent to external model providers. Phase 4 `evaluate_policy` returns `DENY` for `RESTRICTED` + external. `CONFIDENTIAL` + external requires `allow_external` and returns `ALLOW_WITH_REDACTION`.
 
 ## Model-provider exposure
 
-- Provider choice is a **policy** input, not a persona-layer hard-code.
+- Provider choice is a **policy** input, not a persona-layer hard-code. The Phase 4 model gateway routes by catalog name; LiteLLM stays in existing persona helpers and is not imported by `matraix.enterprise`.
 - Hosted third-party models may see prompt text (including persona dimensions). Classify and redact first.
 - Vendor-locked CLI agents (`persona-claude-code`, `persona-gemini-cli`, `persona-codex`) inherit that vendor’s data handling — disclose this on experiments.
 

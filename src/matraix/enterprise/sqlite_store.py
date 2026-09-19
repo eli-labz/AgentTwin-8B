@@ -51,6 +51,7 @@ from matraix.enterprise.population_builder import (
     PopulationSegment,
 )
 from matraix.enterprise.migrations import apply_migrations
+from matraix.enterprise.model_gateway import ModelPolicy, default_model_policy
 from matraix.enterprise.persona_schema import parse_enterprise_block
 from matraix.enterprise.policy import DataClassification, PolicyDecision
 from matraix.enterprise.repositories import _require_tenant
@@ -809,4 +810,68 @@ class SqliteEnterpriseStore:
                 constraints=tuple(json.loads(row["constraints_json"])),
                 include_org_structure=bool(row["include_org_structure"]),
                 privacy_mode=row["privacy_mode"],
+            )
+
+    def put_model_policy(self, policy: ModelPolicy) -> ModelPolicy:
+        with self._lock:
+            self._require_known_tenant(policy.tenant_id)
+            self._conn.execute(
+                """
+                INSERT INTO tenant_model_policies(
+                    tenant_id, allowed_providers_json, denied_providers_json,
+                    required_residency, max_cost_score, max_latency_ms,
+                    allowed_capabilities_json, allow_external, allow_live,
+                    default_decision, denied_actions_json
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(tenant_id) DO UPDATE SET
+                    allowed_providers_json = excluded.allowed_providers_json,
+                    denied_providers_json = excluded.denied_providers_json,
+                    required_residency = excluded.required_residency,
+                    max_cost_score = excluded.max_cost_score,
+                    max_latency_ms = excluded.max_latency_ms,
+                    allowed_capabilities_json = excluded.allowed_capabilities_json,
+                    allow_external = excluded.allow_external,
+                    allow_live = excluded.allow_live,
+                    default_decision = excluded.default_decision,
+                    denied_actions_json = excluded.denied_actions_json
+                """,
+                (
+                    policy.tenant_id.value,
+                    _json_dumps(list(policy.allowed_providers)),
+                    _json_dumps(list(policy.denied_providers)),
+                    policy.required_residency,
+                    policy.max_cost_score,
+                    policy.max_latency_ms,
+                    _json_dumps(list(policy.allowed_capabilities)),
+                    1 if policy.allow_external else 0,
+                    1 if policy.allow_live else 0,
+                    policy.default_decision.value,
+                    _json_dumps(list(policy.denied_actions)),
+                ),
+            )
+            self._conn.commit()
+            return policy
+
+    def get_model_policy(self, tenant_id: TenantId) -> ModelPolicy:
+        with self._lock:
+            self._require_known_tenant(tenant_id)
+            row = self._conn.execute(
+                "SELECT * FROM tenant_model_policies WHERE tenant_id = ?",
+                (tenant_id.value,),
+            ).fetchone()
+            if row is None:
+                return default_model_policy(tenant_id)
+            return ModelPolicy(
+                tenant_id=TenantId(row["tenant_id"]),
+                allowed_providers=tuple(json.loads(row["allowed_providers_json"])),
+                denied_providers=tuple(json.loads(row["denied_providers_json"])),
+                required_residency=row["required_residency"],
+                max_cost_score=row["max_cost_score"],
+                max_latency_ms=row["max_latency_ms"],
+                allowed_capabilities=tuple(json.loads(row["allowed_capabilities_json"])),
+                allow_external=bool(row["allow_external"]),
+                allow_live=bool(row["allow_live"]),
+                default_decision=PolicyDecision(row["default_decision"]),
+                denied_actions=tuple(json.loads(row["denied_actions_json"])),
             )

@@ -37,6 +37,11 @@ def test_openapi_exposes_v1_paths() -> None:
     assert "/api/v1/experiments" in paths
     assert "/api/v1/experiments/{experiment_id}/estimate" in paths
     assert "/api/v1/experiments/{experiment_id}/harbor-job" in paths
+    assert "/api/v1/policy/evaluate" in paths
+    assert "/api/v1/models/route" in paths
+    assert "/api/v1/models/complete" in paths
+    assert "/api/v1/models/catalog" in paths
+    assert "/api/v1/model-policy" in paths
     assert spec["info"]["title"] == "AgentTwin Enterprise API"
 
 
@@ -350,3 +355,133 @@ def test_invalid_persona_schema_is_400() -> None:
         headers={"X-Tenant-Id": tenant["id"]},
     )
     assert response.status_code == 400
+
+
+def test_policy_evaluate_deny_allow_and_sandbox() -> None:
+    client = _client()
+    tenant = client.post("/api/v1/tenants", json={"name": "Acme", "slug": "acme"}).json()
+    headers = {"X-Tenant-Id": tenant["id"]}
+
+    defaulted = client.post(
+        "/api/v1/policy/evaluate",
+        json={"action": "complete", "resource": "model.complete"},
+        headers=headers,
+    )
+    assert defaulted.status_code == 200
+    assert defaulted.json()["decision"] == "SANDBOX_ONLY"
+
+    denied = client.post(
+        "/api/v1/policy/evaluate",
+        json={
+            "action": "complete",
+            "resource": "model.complete",
+            "model_provider": "anthropic",
+            "data_classification": "RESTRICTED",
+            "destination": "external",
+        },
+        headers=headers,
+    )
+    assert denied.status_code == 200
+    assert denied.json()["decision"] == "DENY"
+
+    client.put(
+        "/api/v1/model-policy",
+        json={
+            "allow_external": True,
+            "allowed_providers": ["anthropic"],
+        },
+        headers=headers,
+    )
+    allowed = client.post(
+        "/api/v1/policy/evaluate",
+        json={
+            "action": "complete",
+            "resource": "model.complete",
+            "model_provider": "anthropic",
+            "data_classification": "PUBLIC",
+            "destination": "external",
+        },
+        headers=headers,
+    )
+    assert allowed.status_code == 200
+    assert allowed.json()["decision"] == "ALLOW"
+
+
+def test_model_complete_denies_and_sandboxes() -> None:
+    client = _client()
+    tenant = client.post("/api/v1/tenants", json={"name": "Acme", "slug": "acme"}).json()
+    headers = {"X-Tenant-Id": tenant["id"]}
+
+    sandbox = client.post(
+        "/api/v1/models/complete",
+        json={"messages": [{"role": "user", "content": "hello"}]},
+        headers=headers,
+    )
+    assert sandbox.status_code == 200
+    body = sandbox.json()
+    assert body["decision"] == "SANDBOX_ONLY"
+    assert body["provider"] == "sandbox"
+    assert "hello" in body["content"]
+
+    denied = client.post(
+        "/api/v1/models/complete",
+        json={
+            "model_provider": "openai",
+            "data_classification": "RESTRICTED",
+            "messages": [{"role": "user", "content": "secret"}],
+        },
+        headers=headers,
+    )
+    assert denied.status_code == 403
+    assert denied.json()["decision"] == "DENY"
+
+    policy = client.get("/api/v1/model-policy", headers=headers)
+    assert policy.status_code == 200
+    assert policy.json()["default_decision"] == "SANDBOX_ONLY"
+
+    catalog = client.get("/api/v1/models/catalog", headers=headers)
+    assert catalog.status_code == 200
+    names = {item["name"] for item in catalog.json()}
+    assert "sandbox" in names
+    assert "anthropic" in names
+
+
+def test_model_policy_is_tenant_isolated() -> None:
+    client = _client()
+    alpha = client.post("/api/v1/tenants", json={"name": "Alpha", "slug": "alpha"}).json()
+    bravo = client.post("/api/v1/tenants", json={"name": "Bravo", "slug": "bravo"}).json()
+    client.put(
+        "/api/v1/model-policy",
+        json={"allow_external": True, "allowed_providers": ["anthropic"]},
+        headers={"X-Tenant-Id": alpha["id"]},
+    )
+    bravo_policy = client.get(
+        "/api/v1/model-policy", headers={"X-Tenant-Id": bravo["id"]}
+    ).json()
+    assert bravo_policy["allow_external"] is False
+    assert bravo_policy["allowed_providers"] == []
+
+    alpha_eval = client.post(
+        "/api/v1/policy/evaluate",
+        json={
+            "action": "complete",
+            "resource": "model.complete",
+            "model_provider": "anthropic",
+            "data_classification": "PUBLIC",
+            "destination": "external",
+        },
+        headers={"X-Tenant-Id": alpha["id"]},
+    ).json()
+    bravo_eval = client.post(
+        "/api/v1/policy/evaluate",
+        json={
+            "action": "complete",
+            "resource": "model.complete",
+            "model_provider": "anthropic",
+            "data_classification": "PUBLIC",
+            "destination": "external",
+        },
+        headers={"X-Tenant-Id": bravo["id"]},
+    ).json()
+    assert alpha_eval["decision"] == "ALLOW"
+    assert bravo_eval["decision"] == "SANDBOX_ONLY"

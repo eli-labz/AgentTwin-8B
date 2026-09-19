@@ -1,6 +1,6 @@
 # Enterprise API (`/api/v1`)
 
-Phase 1–2 control-plane skeleton. This is **not** the Playground API
+Phase 1–4 control-plane skeleton. This is **not** the Playground API
 (`docs/application/playground-api.md`). Harbor jobs and `matraix run` stay
 unchanged.
 
@@ -60,6 +60,12 @@ Equivalent: `uvicorn matraix.enterprise.api:app --port 8090`.
 | `GET` | `/api/v1/experiments/{id}` | required | Get one experiment |
 | `POST` | `/api/v1/experiments/{id}/estimate` | required | Pre-run cost estimate (does not launch) |
 | `GET` | `/api/v1/experiments/{id}/harbor-job` | required | Mapped Harbor job document + sidecar |
+| `POST` | `/api/v1/policy/evaluate` | required | Policy gateway (`SANDBOX_ONLY` default) |
+| `GET` | `/api/v1/model-policy` | required | Tenant model policy (sandbox default if unset) |
+| `PUT` | `/api/v1/model-policy` | required | Replace tenant allow-list / residency / flags |
+| `GET` | `/api/v1/models/catalog` | required | Named providers + `allowed` under tenant policy |
+| `POST` | `/api/v1/models/route` | required | Capability / residency / cost routing |
+| `POST` | `/api/v1/models/complete` | required | Policy-gated completion (sandbox mock / dry-run) |
 
 ### Create tenant
 
@@ -148,6 +154,31 @@ run `persona/synthesis`. Privacy default: `aggregate_stats_then_synthetic`.
 — a YAML-shaped document, not a `harbor.Job` instance. `matraix run` defaults
 are unchanged. Rates: `MATRIX_ENTERPRISE_USD_PER_1K_TOKENS` (default 0.003)
 and `MATRIX_ENTERPRISE_TOKENS_PER_TRIAL` (default 4000).
+
+### Policy evaluate
+
+```json
+{
+  "action": "complete",
+  "resource": "model.complete",
+  "model_provider": "anthropic",
+  "data_classification": "RESTRICTED",
+  "destination": "external"
+}
+```
+
+Returns `{ decision, reasons, redaction_required, approval_required }`. Default
+without overrides is `SANDBOX_ONLY`. Forbidden providers and `RESTRICTED` +
+external are `DENY`. `DENY` on `/models/complete` is HTTP `403`.
+
+### Model policy and routing
+
+`PUT /api/v1/model-policy` stores allow/deny lists, residency, cost/latency
+caps, `allow_external`, and `allow_live`. Env overlays:
+`MATRIX_ENTERPRISE_MODEL_ALLOWLIST`, `MATRIX_ENTERPRISE_MODEL_DENYLIST`,
+`MATRIX_ENTERPRISE_MODEL_RESIDENCY`, `MATRIX_ENTERPRISE_ALLOW_EXTERNAL`,
+`MATRIX_ENTERPRISE_ALLOW_LIVE`. No secrets are stored. See
+[model-gateway.md](model-gateway.md).
 
 ## Persistence
 

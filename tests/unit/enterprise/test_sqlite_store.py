@@ -262,6 +262,6 @@ def test_apply_migrations_is_idempotent(tmp_path: Path) -> None:
     conn = sqlite3.connect(path)
     first = apply_migrations(conn)
     second = apply_migrations(conn)
-    assert first == [1, 2, 3]
+    assert first == [1, 2, 3, 4]
     assert second == []
     conn.close()

@@ -33,7 +33,7 @@ Each phase must leave the repository **runnable**: `matraix smoke`, existing Har
 
 **Exit:** a 10k-employee-shaped population can be declared and validated without rewriting `persona/synthesis`.
 
-## Phase 3 — Experiment control plane *(this change)*
+## Phase 3 — Experiment control plane *(accepted)*
 
 - `EnterpriseExperiment` (`Experiment`) launch record: hypothesis, populations, task, model, seed, metrics, governance, retention, `ExecutionBudget`
 - Map experiment → existing Harbor job YAML document (`map_experiment_to_harbor_job`) — does **not** replace `harbor.Job`
@@ -43,13 +43,14 @@ Each phase must leave the repository **runnable**: `matraix smoke`, existing Har
 
 **Exit:** one experiment id produces a Harbor job document and can be re-run with the same seed metadata.
 
-## Phase 4 — Model gateway and policy gateway
+## Phase 4 — Model gateway and policy gateway *(this change)*
 
-- `ModelProvider` / `ModelRequest` / `ModelResponse` / `ModelCapabilities` / `ModelUsage` / `ModelPolicy` beside LiteLLM
-- Routing: capability, allow-list, residency, cost, latency, tenant policy
-- Every execution through policy (`SANDBOX_ONLY` default)
-- Human approval gate for consequential external actions
-- Provider-specific code stays out of persona prompt code
+- `ModelProvider` / `ModelRequest` / `ModelResponse` / `ModelCapabilities` / `ModelUsage` / `ModelPolicy` beside LiteLLM ([model-gateway.md](model-gateway.md))
+- Routing: capability, allow-list, residency, cost, latency, task complexity, tenant policy
+- Every execution through `evaluate_policy` (`SANDBOX_ONLY` default)
+- Human approval gate for consequential external actions (`ALLOW_WITH_APPROVAL`)
+- Provider-specific code stays out of persona prompt code; LiteLLM is not imported here
+- `/api/v1/policy/evaluate`, `/api/v1/models/route|complete|catalog`, `/api/v1/model-policy`
 
 **Exit:** forbidden provider or classified data is DENY/SANDBOX; fallback respects policy.
 
@@ -119,4 +120,4 @@ Each phase must leave the repository **runnable**: `matraix smoke`, existing Har
 
 ## Next implementation target (after this PR)
 
-**Phase 4:** model gateway and policy gateway beside LiteLLM — `ModelProvider` / `ModelRequest` / `ModelResponse` / `ModelPolicy`, capability/allow-list/residency routing, every execution through policy (`SANDBOX_ONLY` default).
+**Phase 5:** distributed runtime — explicit control / data / execution planes, worker abstraction (local, Docker, Kubernetes, queues, batch), event-driven pieces additive to Harbor trials. Same experiment runs local or remote without changing domain types.
