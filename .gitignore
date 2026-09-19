@@ -302,6 +302,9 @@ configs/jobs/_generated/
 plan.md
 user-simulator-chat-design.md
 
+# Local enterprise SQLite store (MATRIX_ENTERPRISE_DB default)
+.enterprise/
+
 # Cursor IDE local config
 .cursor/
 

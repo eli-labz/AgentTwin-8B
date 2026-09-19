@@ -264,6 +264,11 @@ def build_application_job_config(
             "trial_profile": trial_profile,
         },
     }
+    tenant_id = spec.get("tenant_id")
+    if tenant_id:
+        text = str(tenant_id).strip()
+        if text:
+            job["_job_meta"]["tenant_id"] = text
     verifier = spec.get("verifier")
     if verifier:
         job["verifier"] = verifier

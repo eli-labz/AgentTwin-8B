@@ -254,6 +254,18 @@ def _cmd_results(args: argparse.Namespace) -> None:
         sys.stdout.write(writers[fmt](report))
 
 
+def _cmd_enterprise_api(args: argparse.Namespace) -> None:
+    import uvicorn
+
+    from matraix.enterprise.api import create_enterprise_app
+
+    uvicorn.run(
+        create_enterprise_app(),
+        host=args.host,
+        port=args.port,
+    )
+
+
 def _cmd_smoke(args: argparse.Namespace) -> None:
     repo_root = (
         Path(args.repo_root).resolve()
@@ -420,6 +432,19 @@ def main(argv: list[str] | None = None) -> None:
         help="MatrAIx repository root (default: discovered from cwd)",
     )
 
+    api_parser = subparsers.add_parser(
+        "enterprise-api",
+        help="Serve the Phase 1 /api/v1 enterprise control plane (FastAPI).",
+        description=(
+            "Standalone tenant/population/persona API. Does not change "
+            "matraix run defaults. Store: MATRIX_ENTERPRISE_STORE=memory|sqlite "
+            "(MATRIX_ENTERPRISE_DB for the sqlite file). Optional auth: "
+            "MATRIX_ENTERPRISE_API_TOKEN."
+        ),
+    )
+    api_parser.add_argument("--host", default="127.0.0.1")
+    api_parser.add_argument("--port", type=int, default=8090)
+
     args, passthrough = parser.parse_known_args(argv)
     if args.command == "run":
         _cmd_run(args, passthrough)
@@ -431,6 +456,12 @@ def main(argv: list[str] | None = None) -> None:
         if passthrough:
             sys.exit(f"matraix smoke: unrecognized arguments: {' '.join(passthrough)}")
         _cmd_smoke(args)
+    elif args.command == "enterprise-api":
+        if passthrough:
+            sys.exit(
+                f"matraix enterprise-api: unrecognized arguments: {' '.join(passthrough)}"
+            )
+        _cmd_enterprise_api(args)
 
 
 if __name__ == "__main__":
