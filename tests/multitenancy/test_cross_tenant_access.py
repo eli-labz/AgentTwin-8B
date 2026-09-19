@@ -78,7 +78,7 @@ def test_same_local_id_in_other_tenant_is_a_different_record() -> None:
     assert store.get_persona(alpha.id, alpha_persona.id).tenant_id == alpha.id
     assert store.get_persona(bravo.id, bravo_persona.id).tenant_id == bravo.id
     assert store.list_personas(alpha.id) == [alpha_persona]
-    assert persona_ids := [item.id for item in store.list_personas(bravo.id)]
+    persona_ids = [item.id for item in store.list_personas(bravo.id)]
     assert bravo_persona.id in persona_ids
     assert alpha_persona.id not in persona_ids
 
@@ -86,7 +86,7 @@ def test_same_local_id_in_other_tenant_is_a_different_record() -> None:
 def test_cannot_construct_persona_with_mismatched_ids() -> None:
     alpha = TenantId("tnt_alpha")
     bravo = TenantId("tnt_bravo")
-    with pytest.raises(EnterpriseSchemaError, match="tenant mismatch"):
+    with pytest.raises(EnterpriseSchemaError, match="not in this tenant"):
         EnterprisePersona.from_legacy_record(
             tenant_id=alpha,
             organization_id=OrganizationId(bravo, "org_bravo"),
