@@ -36,6 +36,7 @@ Implemented in `matraix.enterprise.ids`.
 | model | `ModelId` | Embeds `TenantId` |
 | policy | `PolicyId` | Embeds `TenantId` |
 | artifact | `ArtifactId` | Embeds `TenantId` |
+| event | `EventId` | Embeds `TenantId` |
 
 Rules:
 
@@ -158,6 +159,10 @@ Control-plane **launch record** (`Experiment`, alias `EnterpriseExperiment`). De
 ### Model gateway
 
 `ModelProvider` / `ModelRequest` / `ModelResponse` / `ModelCapabilities` / `ModelUsage` / `ModelPolicy` live in `matraix.enterprise.model_gateway`. The catalog names providers (sandbox, anthropic, openai, gemini, eu-anthropic, local-ollama) without importing SDKs. Routing uses capability, allow-list, residency, cost, latency, task complexity, and tenant policy. Completions default to the sandbox mock.
+
+### Runtime planes
+
+`EnterpriseRuntime` (`matraix.enterprise.runtime`) is additive. `WorkRequest` carries the existing `Experiment`. `ExecutionRecord` is tenant-scoped (`ExecutionId`). Local worker writes `Artifact` and `EnterpriseEvent` rows. `WorldState` is disabled unless explicitly enabled. See [runtime.md](runtime.md).
 
 ## Persistence
 

@@ -1,4 +1,4 @@
-"""AgentTwin Enterprise domain model (Phase 0–4).
+"""AgentTwin Enterprise domain model (Phase 0–5).
 
 This package is additive. It does not replace Harbor jobs, Playground, or the
 existing 1,290-dimension persona YAML schema. Enterprise fields are optional
@@ -7,8 +7,9 @@ simulation parameters — not a claim of psychological equivalence to humans.
 Public surface: typed IDs, core entities, policy enums and gateway, tenant-bound
 repositories (in-memory default, SQLite optional), ``/api/v1``, org-graph
 edges, a population-shape builder, experiment launch records mapped onto
-Harbor job YAML (not a replacement for ``harbor.Job``), and a
-provider-independent model gateway beside LiteLLM.
+Harbor job YAML (not a replacement for ``harbor.Job``), a
+provider-independent model gateway beside LiteLLM, and control / data /
+execution planes with a local sandbox worker.
 """
 
 from matraix.enterprise.entities import (
@@ -32,12 +33,15 @@ from matraix.enterprise.errors import (
     EnterpriseSchemaError,
     EntityNotFoundError,
     PolicyDeniedError,
+    WorkerNotAvailableError,
 )
 from matraix.enterprise.graph import OrgEdge, OrgNodeKind, OrgRelation
 from matraix.enterprise.ids import (
+    ArtifactId,
     CohortId,
     DepartmentId,
     EntityId,
+    EventId,
     ExecutionId,
     ExperimentId,
     ModelId,
@@ -94,6 +98,27 @@ from matraix.enterprise.repositories import (
     InMemoryEnterpriseStore,
 )
 from matraix.enterprise.sqlite_store import SqliteEnterpriseStore
+from matraix.enterprise.events import (
+    EventBus,
+    EventKind,
+    EnterpriseEvent,
+    SimulationClock,
+    WorldState,
+)
+from matraix.enterprise.runtime import (
+    Artifact,
+    ControlPlane,
+    DataPlane,
+    EnterpriseRuntime,
+    ExecutionPlane,
+    ExecutionRecord,
+    ExecutionStatus,
+    PlaneName,
+    WorkRequest,
+    WorkerKind,
+    get_worker,
+    worker_catalog,
+)
 from matraix.enterprise.store import (
     create_tenant_with_default_org,
     open_enterprise_store,
@@ -101,16 +126,22 @@ from matraix.enterprise.store import (
 
 __all__ = [
     "ApprovalRequiredError",
+    "Artifact",
+    "ArtifactId",
     "CohortId",
+    "ControlPlane",
     "CrossTenantAccessError",
     "DataClassification",
+    "DataPlane",
     "DEFAULT_MODEL_CATALOG",
     "Department",
     "DepartmentId",
     "CostEstimate",
     "EnterpriseDimensions",
+    "EnterpriseEvent",
     "EnterpriseExperiment",
     "EnterprisePersona",
+    "EnterpriseRuntime",
     "EnterpriseSchemaError",
     "EnterpriseRepository",
     "EnterpriseStore",
@@ -118,13 +149,20 @@ __all__ = [
     "EntityNotFoundError",
     "estimate_experiment_cost",
     "evaluate_policy",
+    "EventBus",
+    "EventId",
+    "EventKind",
     "ExecutionBudget",
     "ExecutionId",
+    "ExecutionPlane",
+    "ExecutionRecord",
+    "ExecutionStatus",
     "Experiment",
     "ExperimentGovernance",
     "ExperimentId",
     "ExperimentKind",
     "GenerationBackend",
+    "get_worker",
     "InMemoryEnterpriseStore",
     "map_experiment_to_harbor_job",
     "ModelCapabilities",
@@ -145,6 +183,7 @@ __all__ = [
     "Organization",
     "OrganizationId",
     "PersonaId",
+    "PlaneName",
     "PolicyDecision",
     "PolicyDeniedError",
     "PolicyEvaluation",
@@ -163,6 +202,7 @@ __all__ = [
     "resolve_model_policy",
     "route_model",
     "ScenarioId",
+    "SimulationClock",
     "SqliteEnterpriseStore",
     "TaskId",
     "Team",
@@ -170,5 +210,10 @@ __all__ = [
     "Tenant",
     "TenantId",
     "UserId",
+    "worker_catalog",
+    "WorkerKind",
+    "WorkerNotAvailableError",
+    "WorkRequest",
+    "WorldState",
     "new_id",
 ]

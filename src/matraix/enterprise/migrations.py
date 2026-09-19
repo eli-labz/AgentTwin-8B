@@ -169,6 +169,65 @@ SCHEMA_MIGRATIONS: tuple[tuple[int, str], ...] = (
         );
         """,
     ),
+    (
+        5,
+        """
+        CREATE TABLE executions (
+            tenant_id TEXT NOT NULL,
+            id TEXT NOT NULL,
+            experiment_id TEXT NOT NULL,
+            worker_kind TEXT NOT NULL,
+            status TEXT NOT NULL,
+            decision TEXT NOT NULL,
+            plane TEXT NOT NULL,
+            reasons_json TEXT NOT NULL,
+            harbor_job_name TEXT,
+            trial_slots INTEGER NOT NULL,
+            concurrency INTEGER NOT NULL,
+            artifact_ids_json TEXT NOT NULL,
+            result_json TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY (tenant_id, id),
+            FOREIGN KEY (tenant_id) REFERENCES tenants(id)
+        );
+
+        CREATE INDEX idx_executions_tenant ON executions(tenant_id);
+
+        CREATE TABLE artifacts (
+            tenant_id TEXT NOT NULL,
+            id TEXT NOT NULL,
+            kind TEXT NOT NULL,
+            name TEXT NOT NULL,
+            content_json TEXT NOT NULL,
+            execution_id TEXT,
+            experiment_id TEXT,
+            created_at TEXT NOT NULL,
+            PRIMARY KEY (tenant_id, id),
+            FOREIGN KEY (tenant_id) REFERENCES tenants(id)
+        );
+
+        CREATE INDEX idx_artifacts_tenant ON artifacts(tenant_id);
+        CREATE INDEX idx_artifacts_execution ON artifacts(tenant_id, execution_id);
+
+        CREATE TABLE enterprise_events (
+            tenant_id TEXT NOT NULL,
+            id TEXT NOT NULL,
+            kind TEXT NOT NULL,
+            payload_json TEXT NOT NULL,
+            experiment_id TEXT,
+            execution_id TEXT,
+            tick INTEGER NOT NULL,
+            created_at TEXT NOT NULL,
+            PRIMARY KEY (tenant_id, id),
+            FOREIGN KEY (tenant_id) REFERENCES tenants(id)
+        );
+
+        CREATE INDEX idx_enterprise_events_tenant ON enterprise_events(tenant_id);
+        CREATE INDEX idx_enterprise_events_execution
+            ON enterprise_events(tenant_id, execution_id);
+        """,
+    ),
 )
 
 

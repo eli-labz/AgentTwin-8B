@@ -43,7 +43,7 @@ Each phase must leave the repository **runnable**: `matraix smoke`, existing Har
 
 **Exit:** one experiment id produces a Harbor job document and can be re-run with the same seed metadata.
 
-## Phase 4 — Model gateway and policy gateway *(this change)*
+## Phase 4 — Model gateway and policy gateway *(accepted)*
 
 - `ModelProvider` / `ModelRequest` / `ModelResponse` / `ModelCapabilities` / `ModelUsage` / `ModelPolicy` beside LiteLLM ([model-gateway.md](model-gateway.md))
 - Routing: capability, allow-list, residency, cost, latency, task complexity, tenant policy
@@ -54,12 +54,14 @@ Each phase must leave the repository **runnable**: `matraix smoke`, existing Har
 
 **Exit:** forbidden provider or classified data is DENY/SANDBOX; fallback respects policy.
 
-## Phase 5 — Distributed runtime
+## Phase 5 — Distributed runtime *(this change)*
 
-- Explicit control / data / execution planes
-- Worker abstraction: local, Docker, Kubernetes, queues, batch, GPU clusters
-- Event-driven pieces (EventBus, SimulationClock, ObservationStream) **additive** to Harbor trials
-- Concurrency and rate limits already sketched (`n_concurrent_trials`, pack/shard env vars) — promote to policy
+- Explicit control / data / execution planes ([runtime.md](runtime.md))
+- Worker abstraction: **local** sandbox path; Docker / Kubernetes / queue / batch named stubs
+- Event-driven pieces (`EventBus`, `SimulationClock`, `WorldState`) **additive** to Harbor trials
+- Same `Experiment` type submitted to every worker; local path maps a Harbor job **document** and does not construct `harbor.Job`
+- `/api/v1/workers`, `/api/v1/experiments/{id}/execute`, `/api/v1/executions`, `/api/v1/events`
+- Concurrency stays on `ExecutionBudget.max_concurrency` (copied onto the record)
 
 **Exit:** same experiment runs local or remote without changing domain types.
 
@@ -120,4 +122,4 @@ Each phase must leave the repository **runnable**: `matraix smoke`, existing Har
 
 ## Next implementation target (after this PR)
 
-**Phase 5:** distributed runtime — explicit control / data / execution planes, worker abstraction (local, Docker, Kubernetes, queues, batch), event-driven pieces additive to Harbor trials. Same experiment runs local or remote without changing domain types.
+**Phase 6:** telemetry, metrics, and evaluation — OpenTelemetry-compatible traces (`trace_id`, `tenant_id`, experiment/persona/task, tokens, cost, policy events), hierarchical metrics, failure taxonomy, evaluation SDK. LLM judges stay supplemental to deterministic verifiers. Never present synthetic outputs as human research.

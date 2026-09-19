@@ -12,7 +12,10 @@ via :func:`matraix.enterprise.store.open_enterprise_store`.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Protocol, TypeVar
+from typing import TYPE_CHECKING, Protocol, TypeVar
+
+if TYPE_CHECKING:
+    from matraix.enterprise.runtime import Artifact, ExecutionRecord
 
 from matraix.enterprise.entities import (
     Department,
@@ -30,8 +33,11 @@ from matraix.enterprise.errors import (
 )
 from matraix.enterprise.graph import OrgEdge, OrgRelation, require_org_node
 from matraix.enterprise.ids import (
+    ArtifactId,
     DepartmentId,
     EntityId,
+    EventId,
+    ExecutionId,
     ExperimentId,
     OrganizationId,
     OrgEdgeId,
@@ -40,6 +46,7 @@ from matraix.enterprise.ids import (
     TeamId,
     TenantId,
 )
+from matraix.enterprise.events import EnterpriseEvent
 from matraix.enterprise.model_gateway import ModelPolicy, default_model_policy
 from matraix.enterprise.population_builder import PopulationDeclaration
 
@@ -127,6 +134,36 @@ class EnterpriseRepository(Protocol):
 
     def get_model_policy(self, tenant_id: TenantId) -> ModelPolicy: ...
 
+    def put_execution(self, record: ExecutionRecord) -> ExecutionRecord: ...
+
+    def get_execution(
+        self, tenant_id: TenantId, execution_id: ExecutionId
+    ) -> ExecutionRecord: ...
+
+    def list_executions(self, tenant_id: TenantId) -> list[ExecutionRecord]: ...
+
+    def put_artifact(self, artifact: Artifact) -> Artifact: ...
+
+    def get_artifact(
+        self, tenant_id: TenantId, artifact_id: ArtifactId
+    ) -> Artifact: ...
+
+    def list_artifacts(
+        self,
+        tenant_id: TenantId,
+        *,
+        execution_id: ExecutionId | None = None,
+    ) -> list[Artifact]: ...
+
+    def put_event(self, event: EnterpriseEvent) -> EnterpriseEvent: ...
+
+    def list_events(
+        self,
+        tenant_id: TenantId,
+        *,
+        execution_id: ExecutionId | None = None,
+    ) -> list[EnterpriseEvent]: ...
+
     def close(self) -> None: ...
 
 
@@ -151,6 +188,9 @@ class _TenantBucket:
         default_factory=dict
     )
     model_policy: ModelPolicy | None = None
+    executions: dict[str, ExecutionRecord] = field(default_factory=dict)
+    artifacts: dict[str, Artifact] = field(default_factory=dict)
+    events: dict[str, EnterpriseEvent] = field(default_factory=dict)
 
 
 class InMemoryEnterpriseStore:
@@ -393,6 +433,65 @@ class InMemoryEnterpriseStore:
         if stored is None:
             return default_model_policy(tenant_id)
         return stored
+
+    def put_execution(self, record: ExecutionRecord) -> ExecutionRecord:
+        self._bucket(record.tenant_id).executions[record.id.value] = record
+        return record
+
+    def get_execution(
+        self, tenant_id: TenantId, execution_id: ExecutionId
+    ) -> ExecutionRecord:
+        _require_tenant(tenant_id, execution_id)
+        try:
+            return self._bucket(tenant_id).executions[execution_id.value]
+        except KeyError as exc:
+            raise EntityNotFoundError(
+                f"unknown execution {execution_id.value}"
+            ) from exc
+
+    def list_executions(self, tenant_id: TenantId) -> list[ExecutionRecord]:
+        return list(self._bucket(tenant_id).executions.values())
+
+    def put_artifact(self, artifact: Artifact) -> Artifact:
+        self._bucket(artifact.tenant_id).artifacts[artifact.id.value] = artifact
+        return artifact
+
+    def get_artifact(
+        self, tenant_id: TenantId, artifact_id: ArtifactId
+    ) -> Artifact:
+        _require_tenant(tenant_id, artifact_id)
+        try:
+            return self._bucket(tenant_id).artifacts[artifact_id.value]
+        except KeyError as exc:
+            raise EntityNotFoundError(f"unknown artifact {artifact_id.value}") from exc
+
+    def list_artifacts(
+        self,
+        tenant_id: TenantId,
+        *,
+        execution_id: ExecutionId | None = None,
+    ) -> list[Artifact]:
+        items = list(self._bucket(tenant_id).artifacts.values())
+        if execution_id is not None:
+            _require_tenant(tenant_id, execution_id)
+            items = [item for item in items if item.execution_id == execution_id]
+        return items
+
+    def put_event(self, event: EnterpriseEvent) -> EnterpriseEvent:
+        self._bucket(event.tenant_id).events[event.id.value] = event
+        return event
+
+    def list_events(
+        self,
+        tenant_id: TenantId,
+        *,
+        execution_id: ExecutionId | None = None,
+    ) -> list[EnterpriseEvent]:
+        items = list(self._bucket(tenant_id).events.values())
+        if execution_id is not None:
+            _require_tenant(tenant_id, execution_id)
+            items = [item for item in items if item.execution_id == execution_id]
+        return items
 
     def close(self) -> None:
         return None

@@ -1,6 +1,6 @@
 # Enterprise API (`/api/v1`)
 
-Phase 1–4 control-plane skeleton. This is **not** the Playground API
+Phase 1–5 control-plane skeleton. This is **not** the Playground API
 (`docs/application/playground-api.md`). Harbor jobs and `matraix run` stay
 unchanged.
 
@@ -66,6 +66,13 @@ Equivalent: `uvicorn matraix.enterprise.api:app --port 8090`.
 | `GET` | `/api/v1/models/catalog` | required | Named providers + `allowed` under tenant policy |
 | `POST` | `/api/v1/models/route` | required | Capability / residency / cost routing |
 | `POST` | `/api/v1/models/complete` | required | Policy-gated completion (sandbox mock / dry-run) |
+| `GET` | `/api/v1/workers` | no | Worker catalog (`local` available; others stubbed) |
+| `POST` | `/api/v1/experiments/{id}/execute` | required | Control-plane launch onto a worker (default `local`) |
+| `POST` | `/api/v1/executions` | required | Same launch with `experiment_id` in the body |
+| `GET` | `/api/v1/executions` | required | List executions for the tenant |
+| `GET` | `/api/v1/executions/{id}` | required | Get one execution |
+| `GET` | `/api/v1/executions/{id}/artifacts` | required | Artifacts for one execution |
+| `GET` | `/api/v1/events` | required | Runtime events; optional `?execution_id=` |
 
 ### Create tenant
 
@@ -179,6 +186,20 @@ caps, `allow_external`, and `allow_live`. Env overlays:
 `MATRIX_ENTERPRISE_MODEL_RESIDENCY`, `MATRIX_ENTERPRISE_ALLOW_EXTERNAL`,
 `MATRIX_ENTERPRISE_ALLOW_LIVE`. No secrets are stored. See
 [model-gateway.md](model-gateway.md).
+
+### Execute an experiment (local sandbox)
+
+```json
+{ "worker_kind": "local" }
+```
+
+`POST /api/v1/experiments/{id}/execute` runs the **local sandbox path**:
+policy → Harbor job **document** (if `task_path`) → sandbox completion →
+events. It does not construct `harbor.Job` and does not change `matraix run`.
+Remote kinds (`docker`, `kubernetes`, `queue`, `batch`) accept the same
+`Experiment` and return `status: unavailable`. Default policy remains
+`SANDBOX_ONLY`. See [runtime.md](runtime.md). Worker default:
+`MATRIX_ENTERPRISE_WORKER` (default `local`).
 
 ## Persistence
 

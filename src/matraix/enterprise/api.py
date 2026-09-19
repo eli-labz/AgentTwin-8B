@@ -35,9 +35,11 @@ from matraix.enterprise.errors import (
     EnterpriseSchemaError,
     EntityNotFoundError,
     PolicyDeniedError,
+    WorkerNotAvailableError,
 )
 from matraix.enterprise.ids import (
     EntityKind,
+    ExecutionId,
     ExperimentId,
     OrganizationId,
     OrgEdgeId,
@@ -64,6 +66,7 @@ from matraix.enterprise.population_builder import (
     build_population_declaration,
 )
 from matraix.enterprise.repositories import EnterpriseRepository
+from matraix.enterprise.runtime import EnterpriseRuntime, worker_catalog
 from matraix.enterprise.store import (
     create_tenant_with_default_org,
     default_organization_for,
@@ -244,6 +247,14 @@ class ModelPolicyIn(BaseModel):
     denied_actions: list[str] = Field(default_factory=list)
 
 
+class ExecutionSubmitIn(BaseModel):
+    worker_kind: str = "local"
+    approved: bool = False
+    enable_world_state: bool = False
+    model_provider: str | None = None
+    experiment_id: str | None = None
+
+
 def _configured_token() -> str | None:
     token = os.environ.get(API_TOKEN_ENV, "").strip()
     return token or None
@@ -397,9 +408,14 @@ def create_enterprise_app(
                 "name": "models",
                 "description": "Provider-independent model gateway beside LiteLLM",
             },
+            {
+                "name": "runtime",
+                "description": "Control / data / execution planes and worker catalog",
+            },
         ],
     )
     app.state.store = repository
+    app.state.runtime = EnterpriseRuntime(repository)
 
     @app.exception_handler(CrossTenantAccessError)
     async def _cross_tenant(_request: Request, exc: CrossTenantAccessError) -> JSONResponse:
@@ -435,6 +451,13 @@ def create_enterprise_app(
             },
         )
 
+    @app.exception_handler(WorkerNotAvailableError)
+    async def _worker(_request: Request, exc: WorkerNotAvailableError) -> JSONResponse:
+        return JSONResponse(
+            status_code=409,
+            content={"detail": str(exc), "worker_kind": exc.kind},
+        )
+
     @app.middleware("http")
     async def _auth_middleware(request: Request, call_next):
         if request.url.path in {"/docs", "/redoc", "/openapi.json"}:
@@ -449,6 +472,9 @@ def create_enterprise_app(
 
     def _store() -> EnterpriseRepository:
         return app.state.store
+
+    def _runtime() -> EnterpriseRuntime:
+        return app.state.runtime
 
     @app.get("/health", include_in_schema=False)
     def health() -> dict[str, str]:
@@ -935,6 +961,86 @@ def create_enterprise_app(
         return complete_model(
             _model_request(tenant, payload), _model_policy_for(tenant)
         ).to_dict()
+
+    @app.get("/api/v1/workers", tags=["runtime"])
+    def list_workers() -> list[dict[str, Any]]:
+        return worker_catalog()
+
+    @app.post("/api/v1/experiments/{experiment_id}/execute", tags=["runtime"])
+    def execute_experiment(
+        experiment_id: str,
+        payload: ExecutionSubmitIn | None = None,
+        x_tenant_id: Annotated[str | None, Header(alias=TENANT_HEADER)] = None,
+    ) -> dict[str, Any]:
+        tenant = _require_tenant_header(x_tenant_id)
+        body = payload or ExecutionSubmitIn()
+        return _runtime().execute_experiment(
+            tenant,
+            ExperimentId(tenant, experiment_id),
+            worker_kind=body.worker_kind,
+            approved=body.approved,
+            enable_world_state=body.enable_world_state,
+            model_provider=body.model_provider,
+        ).to_dict()
+
+    @app.post("/api/v1/executions", tags=["runtime"])
+    def create_execution(
+        payload: ExecutionSubmitIn,
+        x_tenant_id: Annotated[str | None, Header(alias=TENANT_HEADER)] = None,
+    ) -> dict[str, Any]:
+        tenant = _require_tenant_header(x_tenant_id)
+        if not payload.experiment_id:
+            raise HTTPException(status_code=400, detail="experiment_id is required")
+        return _runtime().execute_experiment(
+            tenant,
+            ExperimentId(tenant, payload.experiment_id),
+            worker_kind=payload.worker_kind,
+            approved=payload.approved,
+            enable_world_state=payload.enable_world_state,
+            model_provider=payload.model_provider,
+        ).to_dict()
+
+    @app.get("/api/v1/executions", tags=["runtime"])
+    def list_executions(
+        x_tenant_id: Annotated[str | None, Header(alias=TENANT_HEADER)] = None,
+    ) -> list[dict[str, Any]]:
+        tenant = _require_tenant_header(x_tenant_id)
+        return [item.to_dict() for item in _runtime().execution.list(tenant)]
+
+    @app.get("/api/v1/executions/{execution_id}", tags=["runtime"])
+    def get_execution(
+        execution_id: str,
+        x_tenant_id: Annotated[str | None, Header(alias=TENANT_HEADER)] = None,
+    ) -> dict[str, Any]:
+        tenant = _require_tenant_header(x_tenant_id)
+        return _runtime().execution.get(
+            tenant, ExecutionId(tenant, execution_id)
+        ).to_dict()
+
+    @app.get("/api/v1/executions/{execution_id}/artifacts", tags=["runtime"])
+    def list_execution_artifacts(
+        execution_id: str,
+        x_tenant_id: Annotated[str | None, Header(alias=TENANT_HEADER)] = None,
+    ) -> list[dict[str, Any]]:
+        tenant = _require_tenant_header(x_tenant_id)
+        resolved = ExecutionId(tenant, execution_id)
+        _runtime().execution.get(tenant, resolved)
+        return [
+            item.to_dict()
+            for item in _runtime().data.list_artifacts(tenant, execution_id=resolved)
+        ]
+
+    @app.get("/api/v1/events", tags=["runtime"])
+    def list_runtime_events(
+        x_tenant_id: Annotated[str | None, Header(alias=TENANT_HEADER)] = None,
+        execution_id: Annotated[str | None, Query()] = None,
+    ) -> list[dict[str, Any]]:
+        tenant = _require_tenant_header(x_tenant_id)
+        resolved = ExecutionId(tenant, execution_id) if execution_id else None
+        return [
+            item.to_dict()
+            for item in _runtime().data.list_events(tenant, execution_id=resolved)
+        ]
 
     return app
 

@@ -42,6 +42,10 @@ def test_openapi_exposes_v1_paths() -> None:
     assert "/api/v1/models/complete" in paths
     assert "/api/v1/models/catalog" in paths
     assert "/api/v1/model-policy" in paths
+    assert "/api/v1/workers" in paths
+    assert "/api/v1/executions" in paths
+    assert "/api/v1/experiments/{experiment_id}/execute" in paths
+    assert "/api/v1/events" in paths
     assert spec["info"]["title"] == "AgentTwin Enterprise API"
 
 
@@ -485,3 +489,71 @@ def test_model_policy_is_tenant_isolated() -> None:
     ).json()
     assert alpha_eval["decision"] == "ALLOW"
     assert bravo_eval["decision"] == "SANDBOX_ONLY"
+
+
+def test_execute_experiment_local_sandbox_and_isolation() -> None:
+    client = _client()
+    tenant = client.post("/api/v1/tenants", json={"name": "Acme", "slug": "acme"}).json()
+    bravo = client.post("/api/v1/tenants", json={"name": "Bravo", "slug": "bravo"}).json()
+    headers = {"X-Tenant-Id": tenant["id"]}
+    created = client.post(
+        "/api/v1/experiments",
+        json={
+            "hypothesis": "Novice users retry more often",
+            "objective": "Measure retry rate",
+            "random_seed": 42,
+            "task_path": "application/tasks/example-survey_product-feedback",
+            "sample_size": 2,
+        },
+        headers=headers,
+    )
+    assert created.status_code == 200
+    experiment_id = created.json()["id"]
+
+    workers = client.get("/api/v1/workers")
+    assert workers.status_code == 200
+    kinds = {item["kind"]: item["available"] for item in workers.json()}
+    assert kinds["local"] is True
+    assert kinds["docker"] is False
+
+    executed = client.post(
+        f"/api/v1/experiments/{experiment_id}/execute",
+        json={"worker_kind": "local"},
+        headers=headers,
+    )
+    assert executed.status_code == 200
+    body = executed.json()
+    assert body["status"] == "completed"
+    assert body["decision"] == "SANDBOX_ONLY"
+    assert body["worker_kind"] == "local"
+    assert body["result"]["replaced_harbor_job"] is False
+    assert body["harbor_job_name"].startswith("enterprise-")
+
+    artifacts = client.get(
+        f"/api/v1/executions/{body['id']}/artifacts", headers=headers
+    )
+    assert artifacts.status_code == 200
+    assert {item["kind"] for item in artifacts.json()} >= {"harbor_job", "completion"}
+
+    events = client.get("/api/v1/events", headers=headers)
+    assert events.status_code == 200
+    assert any(item["kind"] == "execution_completed" for item in events.json())
+
+    remote = client.post(
+        f"/api/v1/experiments/{experiment_id}/execute",
+        json={"worker_kind": "batch"},
+        headers=headers,
+    )
+    assert remote.status_code == 200
+    assert remote.json()["status"] == "unavailable"
+    assert remote.json()["experiment_id"] == experiment_id
+
+    assert (
+        client.get("/api/v1/executions", headers={"X-Tenant-Id": bravo["id"]}).json()
+        == []
+    )
+    missing = client.get(
+        f"/api/v1/executions/{body['id']}",
+        headers={"X-Tenant-Id": bravo["id"]},
+    )
+    assert missing.status_code == 404

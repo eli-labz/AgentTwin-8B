@@ -35,8 +35,11 @@ from matraix.enterprise.graph import (
     OrgRelation,
     require_org_node,
 )
+from matraix.enterprise.events import EnterpriseEvent, event_from_dict
 from matraix.enterprise.ids import (
+    ArtifactId,
     DepartmentId,
+    ExecutionId,
     ExperimentId,
     OrganizationId,
     OrgEdgeId,
@@ -55,6 +58,12 @@ from matraix.enterprise.model_gateway import ModelPolicy, default_model_policy
 from matraix.enterprise.persona_schema import parse_enterprise_block
 from matraix.enterprise.policy import DataClassification, PolicyDecision
 from matraix.enterprise.repositories import _require_tenant
+from matraix.enterprise.runtime import (
+    Artifact,
+    ExecutionRecord,
+    artifact_from_dict,
+    execution_from_dict,
+)
 
 
 def _parse_dt(value: str) -> datetime:
@@ -875,3 +884,235 @@ class SqliteEnterpriseStore:
                 default_decision=PolicyDecision(row["default_decision"]),
                 denied_actions=tuple(json.loads(row["denied_actions_json"])),
             )
+
+    def put_execution(self, record: ExecutionRecord) -> ExecutionRecord:
+        with self._lock:
+            self._require_known_tenant(record.tenant_id)
+            payload = record.to_dict()
+            self._conn.execute(
+                """
+                INSERT INTO executions(
+                    tenant_id, id, experiment_id, worker_kind, status, decision,
+                    plane, reasons_json, harbor_job_name, trial_slots,
+                    concurrency, artifact_ids_json, result_json, created_at,
+                    updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(tenant_id, id) DO UPDATE SET
+                    experiment_id = excluded.experiment_id,
+                    worker_kind = excluded.worker_kind,
+                    status = excluded.status,
+                    decision = excluded.decision,
+                    plane = excluded.plane,
+                    reasons_json = excluded.reasons_json,
+                    harbor_job_name = excluded.harbor_job_name,
+                    trial_slots = excluded.trial_slots,
+                    concurrency = excluded.concurrency,
+                    artifact_ids_json = excluded.artifact_ids_json,
+                    result_json = excluded.result_json,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    record.tenant_id.value,
+                    record.id.value,
+                    record.experiment_id.value,
+                    record.worker_kind.value,
+                    record.status.value,
+                    record.decision.value,
+                    record.plane.value,
+                    _json_dumps(list(record.reasons)),
+                    record.harbor_job_name,
+                    record.trial_slots,
+                    record.concurrency,
+                    _json_dumps(list(record.artifact_ids)),
+                    _json_dumps(record.result),
+                    payload["created_at"],
+                    payload["updated_at"],
+                ),
+            )
+            self._conn.commit()
+            return record
+
+    def get_execution(
+        self, tenant_id: TenantId, execution_id: ExecutionId
+    ) -> ExecutionRecord:
+        _require_tenant(tenant_id, execution_id)
+        with self._lock:
+            self._require_known_tenant(tenant_id)
+            row = self._conn.execute(
+                "SELECT * FROM executions WHERE tenant_id = ? AND id = ?",
+                (tenant_id.value, execution_id.value),
+            ).fetchone()
+            if row is None:
+                raise EntityNotFoundError(f"unknown execution {execution_id.value}")
+            return self._execution_from_row(row)
+
+    def list_executions(self, tenant_id: TenantId) -> list[ExecutionRecord]:
+        with self._lock:
+            self._require_known_tenant(tenant_id)
+            rows = self._conn.execute(
+                "SELECT * FROM executions WHERE tenant_id = ? ORDER BY created_at, id",
+                (tenant_id.value,),
+            ).fetchall()
+            return [self._execution_from_row(row) for row in rows]
+
+    def _execution_from_row(self, row: sqlite3.Row) -> ExecutionRecord:
+        return execution_from_dict(
+            {
+                "id": row["id"],
+                "tenant_id": row["tenant_id"],
+                "experiment_id": row["experiment_id"],
+                "worker_kind": row["worker_kind"],
+                "status": row["status"],
+                "decision": row["decision"],
+                "plane": row["plane"],
+                "reasons": json.loads(row["reasons_json"]),
+                "harbor_job_name": row["harbor_job_name"],
+                "trial_slots": row["trial_slots"],
+                "concurrency": row["concurrency"],
+                "artifact_ids": json.loads(row["artifact_ids_json"]),
+                "result": json.loads(row["result_json"]),
+                "created_at": row["created_at"],
+                "updated_at": row["updated_at"],
+            }
+        )
+
+    def put_artifact(self, artifact: Artifact) -> Artifact:
+        with self._lock:
+            self._require_known_tenant(artifact.tenant_id)
+            self._conn.execute(
+                """
+                INSERT INTO artifacts(
+                    tenant_id, id, kind, name, content_json, execution_id,
+                    experiment_id, created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(tenant_id, id) DO UPDATE SET
+                    kind = excluded.kind,
+                    name = excluded.name,
+                    content_json = excluded.content_json,
+                    execution_id = excluded.execution_id,
+                    experiment_id = excluded.experiment_id
+                """,
+                (
+                    artifact.tenant_id.value,
+                    artifact.id.value,
+                    artifact.kind,
+                    artifact.name,
+                    _json_dumps(artifact.content),
+                    artifact.execution_id.value if artifact.execution_id else None,
+                    artifact.experiment_id.value if artifact.experiment_id else None,
+                    artifact.created_at.isoformat(),
+                ),
+            )
+            self._conn.commit()
+            return artifact
+
+    def get_artifact(
+        self, tenant_id: TenantId, artifact_id: ArtifactId
+    ) -> Artifact:
+        _require_tenant(tenant_id, artifact_id)
+        with self._lock:
+            self._require_known_tenant(tenant_id)
+            row = self._conn.execute(
+                "SELECT * FROM artifacts WHERE tenant_id = ? AND id = ?",
+                (tenant_id.value, artifact_id.value),
+            ).fetchone()
+            if row is None:
+                raise EntityNotFoundError(f"unknown artifact {artifact_id.value}")
+            return self._artifact_from_row(row)
+
+    def list_artifacts(
+        self,
+        tenant_id: TenantId,
+        *,
+        execution_id: ExecutionId | None = None,
+    ) -> list[Artifact]:
+        with self._lock:
+            self._require_known_tenant(tenant_id)
+            sql = "SELECT * FROM artifacts WHERE tenant_id = ?"
+            params: list[Any] = [tenant_id.value]
+            if execution_id is not None:
+                _require_tenant(tenant_id, execution_id)
+                sql += " AND execution_id = ?"
+                params.append(execution_id.value)
+            sql += " ORDER BY created_at, id"
+            rows = self._conn.execute(sql, params).fetchall()
+            return [self._artifact_from_row(row) for row in rows]
+
+    def _artifact_from_row(self, row: sqlite3.Row) -> Artifact:
+        return artifact_from_dict(
+            {
+                "id": row["id"],
+                "tenant_id": row["tenant_id"],
+                "kind": row["kind"],
+                "name": row["name"],
+                "content": json.loads(row["content_json"]),
+                "execution_id": row["execution_id"],
+                "experiment_id": row["experiment_id"],
+                "created_at": row["created_at"],
+            }
+        )
+
+    def put_event(self, event: EnterpriseEvent) -> EnterpriseEvent:
+        with self._lock:
+            self._require_known_tenant(event.tenant_id)
+            self._conn.execute(
+                """
+                INSERT INTO enterprise_events(
+                    tenant_id, id, kind, payload_json, experiment_id,
+                    execution_id, tick, created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(tenant_id, id) DO UPDATE SET
+                    kind = excluded.kind,
+                    payload_json = excluded.payload_json,
+                    experiment_id = excluded.experiment_id,
+                    execution_id = excluded.execution_id,
+                    tick = excluded.tick
+                """,
+                (
+                    event.tenant_id.value,
+                    event.id.value,
+                    event.kind.value,
+                    _json_dumps(event.payload),
+                    event.experiment_id.value if event.experiment_id else None,
+                    event.execution_id.value if event.execution_id else None,
+                    event.tick,
+                    event.created_at.isoformat(),
+                ),
+            )
+            self._conn.commit()
+            return event
+
+    def list_events(
+        self,
+        tenant_id: TenantId,
+        *,
+        execution_id: ExecutionId | None = None,
+    ) -> list[EnterpriseEvent]:
+        with self._lock:
+            self._require_known_tenant(tenant_id)
+            sql = "SELECT * FROM enterprise_events WHERE tenant_id = ?"
+            params: list[Any] = [tenant_id.value]
+            if execution_id is not None:
+                _require_tenant(tenant_id, execution_id)
+                sql += " AND execution_id = ?"
+                params.append(execution_id.value)
+            sql += " ORDER BY created_at, id"
+            rows = self._conn.execute(sql, params).fetchall()
+            return [self._event_from_row(row) for row in rows]
+
+    def _event_from_row(self, row: sqlite3.Row) -> EnterpriseEvent:
+        return event_from_dict(
+            {
+                "id": row["id"],
+                "tenant_id": row["tenant_id"],
+                "kind": row["kind"],
+                "payload": json.loads(row["payload_json"]),
+                "experiment_id": row["experiment_id"],
+                "execution_id": row["execution_id"],
+                "tick": row["tick"],
+                "created_at": row["created_at"],
+            }
+        )

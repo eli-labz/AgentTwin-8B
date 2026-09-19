@@ -51,3 +51,11 @@ class ApprovalRequiredError(EnterpriseError, PermissionError):
         self.reasons = reasons
         self.decision = decision
         super().__init__(message)
+
+
+class WorkerNotAvailableError(EnterpriseError):
+    """Raised when a named worker kind has no wired adapter."""
+
+    def __init__(self, kind: str, message: str | None = None) -> None:
+        self.kind = kind
+        super().__init__(message or f"{kind} worker is not wired; use local")
