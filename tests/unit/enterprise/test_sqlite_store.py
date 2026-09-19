@@ -24,7 +24,7 @@ from matraix.enterprise import (
     open_enterprise_store,
 )
 from matraix.enterprise.ids import EntityKind, ExperimentId
-from matraix.enterprise.migrations import apply_migrations
+from matraix.enterprise.migrations import LATEST_SCHEMA_VERSION, apply_migrations
 from matraix.enterprise.policy import PolicyDecision
 
 
@@ -262,6 +262,6 @@ def test_apply_migrations_is_idempotent(tmp_path: Path) -> None:
     conn = sqlite3.connect(path)
     first = apply_migrations(conn)
     second = apply_migrations(conn)
-    assert first == [1, 2, 3, 4, 5, 6]
+    assert first == list(range(1, LATEST_SCHEMA_VERSION + 1))
     assert second == []
     conn.close()

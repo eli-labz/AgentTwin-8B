@@ -96,7 +96,7 @@ Each phase must leave the repository **runnable**: `matraix smoke`, existing Har
 
 **Exit:** one experiment produces an exportable report with reproducibility metadata.
 
-## Phase 9 — Security and governance hardening *(this change)*
+## Phase 9 — Security and governance hardening *(accepted)*
 
 - OIDC / SSO pattern + SCIM-shaped user hooks without a live IdP ([identity.md](identity.md))
 - RBAC (+ ABAC tenant / classification hooks) on `/api/v1` when a principal is authenticated
@@ -107,14 +107,14 @@ Each phase must leave the repository **runnable**: `matraix smoke`, existing Har
 
 **Exit:** tenant isolation demonstrated on API + storage; audit export works.
 
-## Phase 10 — Performance testing and production packaging
+## Phase 10 — Performance testing and production packaging *(this change)*
 
-- Benchmarks: personas/sec, tasks/sec, queue/model/db latency, cost/persona
-- Docker Compose + Kubernetes references (cloud-neutral core)
-- CI gates: lint, types, unit, integration, security, deps, schema, migrations, image, smoke simulation
-- Production packaging; no merge silently breaks example tasks
+- Synthetic bench `matraix enterprise-bench` (`EnterpriseBenchmark.v1`): personas/sec, tasks/sec, queue/model/db latency, telemetry overhead, RSS/CPU, cost/persona and cost/task — sandbox model, CI-sized defaults ([scale.md](scale.md))
+- Docker Compose + kustomize references under `deploy/enterprise/` — cloud-neutral core, no baked secrets ([packaging.md](packaging.md))
+- Additive CI: `.github/workflows/enterprise.yml` + `scripts/enterprise_ci.sh` (lint, compileall+import, unit/integration, security/deps, schema, migrations, container build, `matraix smoke`)
+- Scale path 10 → 1M+ documented without one-machine assumptions; remote workers remain stubs
 
-**Exit:** documented scale path from 10 to 1,000,000+ simulated users without one-machine assumptions.
+**Exit:** references and benches exist and are documented. This is **not** a certified 1M soak or a wired Kubernetes worker farm.
 
 ---
 
@@ -127,4 +127,4 @@ Each phase must leave the repository **runnable**: `matraix smoke`, existing Har
 
 ## Next implementation target (after this PR)
 
-**Phase 10:** performance testing and production packaging — benchmarks (personas/sec, tasks/sec, queue/model/db latency, cost/persona); Docker Compose + Kubernetes references (cloud-neutral core); CI gates (lint, types, unit, integration, security, deps, schema, migrations, image, smoke); production packaging that does not silently break example tasks. Document a scale path from 10 to 1,000,000+ simulated users without one-machine assumptions.
+**Post-roadmap operations (not a new numbered phase in this document):** wire Docker / Kubernetes / queue / batch workers on the Phase 5 abstraction; live IdP / JWKS (not just HS256 dev tokens); Harbor `jobs/` filesystem tenancy; optional LiteLLM adapter behind the enterprise model gateway; operator-owned shared SQL + object storage; a real multi-worker soak. Keep the core cloud-neutral. Do not treat Compose/kustomize references as a certified cluster.

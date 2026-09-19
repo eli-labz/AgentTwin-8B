@@ -1,6 +1,6 @@
 # Enterprise API (`/api/v1`)
 
-Phase 1–9 control-plane skeleton. This is **not** the Playground API
+Phase 1–10 control-plane skeleton. This is **not** the Playground API
 (`docs/application/playground-api.md`). Harbor jobs and `matraix run` stay
 unchanged.
 
@@ -21,6 +21,9 @@ uv run matraix enterprise-api --port 8090
 ```
 
 Equivalent: `uvicorn matraix.enterprise.api:app --port 8090`.
+
+Compose / kustomize references: [packaging.md](packaging.md). Synthetic
+bench: `uv run matraix enterprise-bench` ([scale.md](scale.md)).
 
 ## Conventions
 

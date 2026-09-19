@@ -1,0 +1,60 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: enterprise-api
+  namespace: agenttwin-enterprise
+  labels:
+    app.kubernetes.io/name: enterprise-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: enterprise-api
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: enterprise-api
+    spec:
+      containers:
+        - name: api
+          image: agenttwin-enterprise-api:local
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8090
+          envFrom:
+            - configMapRef:
+                name: enterprise-api
+          env:
+            - name: MATRIX_ENTERPRISE_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: enterprise-api
+                  key: MATRIX_ENTERPRISE_API_TOKEN
+                  optional: true
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: enterprise-data

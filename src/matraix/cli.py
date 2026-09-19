@@ -287,9 +287,37 @@ def _cmd_smoke(args: argparse.Namespace) -> None:
         persona=args.persona,
         keep_artifacts=bool(args.keep_artifacts),
     )
-    sys.stdout.write(format_smoke_report(report))
+        sys.stdout.write(format_smoke_report(report))
     if not report.ok:
         sys.exit(1)
+
+
+def _cmd_enterprise_bench(args: argparse.Namespace) -> None:
+    from matraix.enterprise.benchmarks import (
+        format_benchmark_json,
+        format_benchmark_text,
+        run_benchmark,
+    )
+
+    report = run_benchmark(
+        personas=args.personas,
+        tasks=args.tasks,
+        store=args.store,
+        db_path=args.db,
+    )
+    if args.format == "json":
+        text = format_benchmark_json(report)
+    else:
+        text = format_benchmark_text(report)
+    if args.output:
+        output_path = Path(args.output).expanduser()
+        if not output_path.is_absolute():
+            output_path = (Path.cwd() / output_path).resolve()
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(text, encoding="utf-8")
+        print(f"matraix enterprise-bench: wrote {output_path}", file=sys.stderr)
+        return
+    sys.stdout.write(text)
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -448,6 +476,53 @@ def main(argv: list[str] | None = None) -> None:
     api_parser.add_argument("--host", default="127.0.0.1")
     api_parser.add_argument("--port", type=int, default=8090)
 
+    bench_parser = subparsers.add_parser(
+        "enterprise-bench",
+        help="Synthetic enterprise load (personas/sec, latency, cost).",
+        description=(
+            "Runs a small sandbox load against the local enterprise worker. "
+            "Measures personas/sec, tasks/sec, queue/model/DB latency, "
+            "telemetry overhead, RSS, and cost/persona. Model path is the "
+            "Phase 4 sandbox completer — no live provider. Does not change "
+            "matraix run defaults. Default sizes stay small for CI."
+        ),
+    )
+    bench_parser.add_argument(
+        "--personas",
+        type=int,
+        default=10,
+        help="Synthetic population rows to write (default: 10)",
+    )
+    bench_parser.add_argument(
+        "--tasks",
+        type=int,
+        default=2,
+        help="Sandbox experiment executions (default: 2)",
+    )
+    bench_parser.add_argument(
+        "--store",
+        choices=("memory", "sqlite"),
+        default="memory",
+        help="Enterprise store backend (default: memory)",
+    )
+    bench_parser.add_argument(
+        "--db",
+        default=None,
+        help="SQLite path when --store sqlite (default: :memory:)",
+    )
+    bench_parser.add_argument(
+        "--format",
+        choices=("text", "json"),
+        default="text",
+        help="Report format (default: text)",
+    )
+    bench_parser.add_argument(
+        "-o",
+        "--output",
+        default=None,
+        help="Write the report to a file instead of stdout",
+    )
+
     args, passthrough = parser.parse_known_args(argv)
     if args.command == "run":
         _cmd_run(args, passthrough)
@@ -465,6 +540,12 @@ def main(argv: list[str] | None = None) -> None:
                 f"matraix enterprise-api: unrecognized arguments: {' '.join(passthrough)}"
             )
         _cmd_enterprise_api(args)
+    elif args.command == "enterprise-bench":
+        if passthrough:
+            sys.exit(
+                f"matraix enterprise-bench: unrecognized arguments: {' '.join(passthrough)}"
+            )
+        _cmd_enterprise_bench(args)
 
 
 if __name__ == "__main__":

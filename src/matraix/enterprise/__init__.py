@@ -1,4 +1,4 @@
-"""AgentTwin Enterprise domain model (Phase 0–9).
+"""AgentTwin Enterprise domain model (Phase 0–10).
 
 This package is additive. It does not replace Harbor jobs, Playground, or the
 existing 1,290-dimension persona YAML schema. Enterprise fields are optional
@@ -11,11 +11,12 @@ Harbor job YAML (not a replacement for ``harbor.Job``), a
 provider-independent model gateway beside LiteLLM, control / data /
 execution planes with a local sandbox worker, telemetry / evaluation
 (synthetic outputs are not human research), a Playground-hosted
-enterprise console (nav + experiment wizard + artifact views), and
+enterprise console (nav + experiment wizard + artifact views),
 executive reports (JSON / CSV / PDF-ready HTML) that always carry
-limitations plus recommended human validation, and Phase 9 IAM
+limitations plus recommended human validation, Phase 9 IAM
 hardening (OIDC patterns, RBAC+ABAC, append-only audit, CSRF,
-rate limits, governance reviews).
+rate limits, governance reviews), and Phase 10 synthetic benchmarks
+plus cloud-neutral packaging references.
 """
 
 from matraix.enterprise.entities import (
@@ -180,9 +181,18 @@ from matraix.enterprise.identity import (
     permissions_for,
 )
 from matraix.enterprise.oidc import mint_dev_jwt, oidc_metadata, principal_from_claims
+from matraix.enterprise.benchmarks import (
+    SCHEMA_VERSION as BENCHMARK_SCHEMA,
+    BenchmarkReport,
+    format_benchmark_json,
+    format_benchmark_text,
+    run_benchmark,
+)
 
 __all__ = [
     "ANONYMOUS",
+    "BENCHMARK_SCHEMA",
+    "BenchmarkReport",
     "AppendOnlyAuditError",
     "ApprovalRequiredError",
     "AuditEvent",
@@ -260,9 +270,12 @@ __all__ = [
     "ReviewStatus",
     "Role",
     "build_executive_report",
+    "format_benchmark_json",
+    "format_benchmark_text",
     "format_report_csv",
     "format_report_html",
     "format_report_json",
+    "run_benchmark",
     "supplemental_llm_judge",
     "SYNTHETIC_METRIC_LIMITATION",
     "SpanRecord",

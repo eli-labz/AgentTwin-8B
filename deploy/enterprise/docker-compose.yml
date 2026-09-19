@@ -1,0 +1,41 @@
+# Local reference stack for the enterprise control plane.
+# From the repository root:
+#   docker compose -f deploy/enterprise/docker-compose.yml up --build
+#
+# Copy deploy/enterprise/.env.example to deploy/enterprise/.env and set
+# tokens there. Do not commit .env. Core domain stays cloud-neutral.
+
+name: agenttwin-enterprise
+
+services:
+  enterprise-api:
+    build:
+      context: ../..
+      dockerfile: deploy/enterprise/Dockerfile
+    image: agenttwin-enterprise-api:local
+    ports:
+      - "8090:8090"
+    environment:
+      MATRIX_ENTERPRISE_STORE: sqlite
+      MATRIX_ENTERPRISE_DB: /data/enterprise.sqlite
+      # Optional (export or uncomment in an untracked .env you pass with
+      # `--env-file deploy/enterprise/.env`; do not commit tokens):
+      # MATRIX_ENTERPRISE_API_TOKEN
+      # MATRIX_ENTERPRISE_OIDC_DEV_SECRET
+      # MATRIX_ENTERPRISE_ENV
+    volumes:
+      - enterprise-data:/data
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8090/health')",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  enterprise-data:

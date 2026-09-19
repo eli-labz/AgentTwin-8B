@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: enterprise-api
+  namespace: agenttwin-enterprise
+  labels:
+    app.kubernetes.io/name: enterprise-api
+data:
+  MATRIX_ENTERPRISE_STORE: sqlite
+  MATRIX_ENTERPRISE_DB: /data/enterprise.sqlite
+  # Operators set MATRIX_ENTERPRISE_ENV=production in an overlay when they
+  # also provide a Secret for MATRIX_ENTERPRISE_API_TOKEN. Do not bake tokens.

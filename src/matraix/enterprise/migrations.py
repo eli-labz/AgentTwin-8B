@@ -9,6 +9,9 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Iterable
 
+# Highest applied version. CI asserts SCHEMA_MIGRATIONS is 1..N contiguous.
+LATEST_SCHEMA_VERSION = 6
+
 SCHEMA_MIGRATIONS: tuple[tuple[int, str], ...] = (
     (
         1,

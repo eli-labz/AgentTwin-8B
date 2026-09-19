@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: agenttwin-enterprise
+  labels:
+    app.kubernetes.io/name: agenttwin-enterprise
+    app.kubernetes.io/part-of: matraix

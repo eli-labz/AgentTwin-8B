@@ -1,0 +1,69 @@
+name: Enterprise gates
+
+on:
+  pull_request:
+    branches: ["main"]
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  enterprise:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v8.1.0
+        with:
+          version: "latest"
+
+      - name: Set up Python 3.12
+        run: uv python install 3.12
+
+      - name: Install package and test dependencies
+        run: |
+          uv venv --python 3.12
+          uv pip install -e .
+          uv pip install pytest pytest-asyncio httpx
+
+      - name: Lint / typecheck / unit / integration / security / schema / migrations / smoke
+        env:
+          PYTHONPATH: .:src:environment/runtime:packages/playground/src:application/playground
+          ENTERPRISE_CI_SKIP_DOCKER: "1"
+        run: bash scripts/enterprise_ci.sh
+
+      - name: Container build
+        run: docker build -f deploy/enterprise/Dockerfile -t agenttwin-enterprise-api:ci .
+
+      - name: Kustomize render (schema check)
+        run: |
+          if command -v kubectl >/dev/null 2>&1; then
+            kubectl kustomize deploy/enterprise/k8s > /tmp/enterprise-k8s.yaml
+          else
+            python3 - <<'PY'
+from pathlib import Path
+required = {
+    "namespace.yaml",
+    "configmap.yaml",
+    "deployment.yaml",
+    "service.yaml",
+    "pvc.yaml",
+    "kustomization.yaml",
+}
+present = {p.name for p in Path("deploy/enterprise/k8s").iterdir()}
+missing = required - present
+if missing:
+    raise SystemExit(f"missing kustomize files: {sorted(missing)}")
+text = Path("deploy/enterprise/k8s/kustomization.yaml").read_text(encoding="utf-8")
+for cloud in ("eks.amazonaws.com", "cloud.google.com", "azure.com"):
+    if cloud in text:
+        raise SystemExit(f"kustomization must stay cloud-neutral ({cloud})")
+print("kustomize files present; kubectl not installed so render skipped")
+PY
+          fi

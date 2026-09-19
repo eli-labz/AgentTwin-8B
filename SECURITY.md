@@ -28,9 +28,9 @@ If you discover a vulnerability in a deployment of this software, do not file a 
 - Append-only audit log, separable from normal telemetry
 - Never place secrets in model prompts or logs
 
-## Phase 0–9 code
+## Phase 0–10 code
 
-`matraix.enterprise` enforces tenant-scoped IDs and fails closed on cross-tenant repository access. `/api/v1` binds `X-Tenant-Id` and optionally `MATRIX_ENTERPRISE_API_TOKEN`. Authenticated principals are RBAC-checked; cookie sessions require CSRF; the audit log is append-only and separate from telemetry. Harbor `jobs/` on disk is still not tenant-prefixed. See `docs/enterprise/identity.md`.
+`matraix.enterprise` enforces tenant-scoped IDs and fails closed on cross-tenant repository access. `/api/v1` binds `X-Tenant-Id` and optionally `MATRIX_ENTERPRISE_API_TOKEN`. Authenticated principals are RBAC-checked; cookie sessions require CSRF; the audit log is append-only and separate from telemetry. Harbor `jobs/` on disk is still not tenant-prefixed. Packaging references under `deploy/enterprise/` must not bake tokens. See `docs/enterprise/identity.md` and `docs/enterprise/packaging.md`.
 
 ## Reporting
 

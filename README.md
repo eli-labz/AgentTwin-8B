@@ -69,9 +69,10 @@ See the [Handbook](docs/README.md) and [quickstart](docs/quickstart.md).
 
 ## Enterprise status (in progress)
 
-Phases **0–9** are on this branch as a **draft pull request**
+Phases **0–10** are on this branch as a **draft pull request**
 ([#1](https://github.com/eli-labz/AgentTwin-8B/pull/1)). They are not a
-finished production platform. Phase 10 (packaging) is **not** done.
+finished production platform. Benchmarks are a synthetic sandbox probe,
+not a 1M soak. Compose/kustomize are references, not a certified cluster.
 
 | Phase | On this branch |
 |-------|----------------|
@@ -85,7 +86,7 @@ finished production platform. Phase 10 (packaging) is **not** done.
 | 7 Enterprise console | Yes — Playground Enterprise mode + `/console`; deep pages stubbed |
 | 8 Reporting + executive analytics | Yes — JSON/CSV/HTML reports; limitations + human validation required |
 | 9 Security + governance | Yes — OIDC/RBAC patterns, append-only audit, CSRF, rate limits |
-| 10 Packaging | Not on this branch |
+| 10 Packaging + benches | Yes — `enterprise-bench`, Compose/kustomize **references**, additive CI. Remote workers still stubs. |
 
 Python package: `matraix.enterprise`. HTTP: `/api/v1` (OpenAPI at `/docs` when
 the enterprise API is running). Default store is in-memory; set
@@ -169,6 +170,21 @@ uv run matraix enterprise-api --port 8090
 
 Open `http://127.0.0.1:8090/docs`. Tenant-scoped routes need `X-Tenant-Id`.
 Contract: [docs/enterprise/api.md](docs/enterprise/api.md).
+
+Synthetic load (sandbox model, no live provider):
+
+```bash
+uv run matraix enterprise-bench --personas 10 --tasks 2
+```
+
+Packaging references (cloud-neutral; no baked secrets):
+[docs/enterprise/packaging.md](docs/enterprise/packaging.md),
+[docs/enterprise/scale.md](docs/enterprise/scale.md).
+
+```bash
+docker compose -f deploy/enterprise/docker-compose.yml up --build
+bash scripts/enterprise_ci.sh
+```
 
 ### Import Persona 1M (recommended)
 
@@ -254,8 +270,9 @@ AgentTwin-8B/
 ├── apps/viewer/             Frontend paired with `harbor view`
 ├── configs/jobs/            Curated & generated Harbor job recipes
 ├── docs/                    Handbook + docs/enterprise/
-├── src/matraix/             CLI (`run` / `results` / `smoke` / `enterprise-api`)
-│   └── enterprise/          Additive control plane (Phases 0–6)
+├── src/matraix/             CLI (`run` / `results` / `smoke` / `enterprise-api` / `enterprise-bench`)
+│   └── enterprise/          Additive control plane (Phases 0–10)
+├── deploy/enterprise/       Compose + kustomize references (no baked secrets)
 ├── tests/                   Unit / environment / enterprise tests
 └── jobs/                    Local Harbor outputs (gitignored)
 ```
