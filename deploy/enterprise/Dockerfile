@@ -1,5 +1,5 @@
 # Reference image for the AgentTwin Enterprise control plane.
-# Cloud-neutral: no provider SDKs, no baked secrets, no Harbor/LiteLLM.
+# Cloud-neutral: no provider SDKs, no baked secrets, no Harbor extras.
 # Build from the repository root:
 #   docker build -f deploy/enterprise/Dockerfile -t agenttwin-enterprise-api:local .
 #

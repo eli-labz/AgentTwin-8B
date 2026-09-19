@@ -160,8 +160,10 @@ def run_benchmark(
     for _ in range(n_tasks):
         tick = _now()
         complete_model(
-            ModelRequest(messages=[{"role": "user", "content": "bench"}]),
-            tenant_id=tenant.id,
+            ModelRequest(
+                tenant_id=tenant.id,
+                messages=({"role": "user", "content": "bench"},),
+            )
         )
         model_samples.append((_now() - tick) * 1000)
 
