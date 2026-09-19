@@ -31,6 +31,10 @@ Phase 1 bindings:
 - Optional `MATRIX_ENTERPRISE_API_TOKEN` (Bearer). Unset = local/dev open API, same posture as Playground.
 - SQLite rows are keyed by `tenant_id`. Cross-tenant `get_*` still raises `CrossTenantAccessError`.
 - Org-graph edges and population declarations are tenant-partitioned the same way.
+- Phase 6 traces, metrics, evaluation, and failure artifacts reuse the same
+  tenant-scoped artifact store. `/api/v1/executions/{id}/trace` (and siblings)
+  construct the execution id in the caller’s tenant — a foreign id is `404`,
+  not a cross-tenant leak.
 
 Future bindings, each tenant-scoped:
 

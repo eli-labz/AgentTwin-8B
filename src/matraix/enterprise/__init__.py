@@ -1,4 +1,4 @@
-"""AgentTwin Enterprise domain model (Phase 0–5).
+"""AgentTwin Enterprise domain model (Phase 0–6).
 
 This package is additive. It does not replace Harbor jobs, Playground, or the
 existing 1,290-dimension persona YAML schema. Enterprise fields are optional
@@ -8,8 +8,9 @@ Public surface: typed IDs, core entities, policy enums and gateway, tenant-bound
 repositories (in-memory default, SQLite optional), ``/api/v1``, org-graph
 edges, a population-shape builder, experiment launch records mapped onto
 Harbor job YAML (not a replacement for ``harbor.Job``), a
-provider-independent model gateway beside LiteLLM, and control / data /
-execution planes with a local sandbox worker.
+provider-independent model gateway beside LiteLLM, control / data /
+execution planes with a local sandbox worker, and telemetry / evaluation
+(synthetic outputs are not human research).
 """
 
 from matraix.enterprise.entities import (
@@ -119,6 +120,31 @@ from matraix.enterprise.runtime import (
     get_worker,
     worker_catalog,
 )
+from matraix.enterprise.evaluation import (
+    EvaluationBundle,
+    EvaluationResult,
+    EvaluatorKind,
+    evaluate_execution,
+    supplemental_llm_judge,
+)
+from matraix.enterprise.metrics import (
+    AggregatedMetric,
+    MetricLevel,
+    MetricPoint,
+    MetricsRegistry,
+    SYNTHETIC_METRIC_LIMITATION,
+)
+from matraix.enterprise.observability import record_execution_observability
+from matraix.enterprise.telemetry import (
+    FAILURE_CLASSES,
+    FailureClass,
+    FailureRecord,
+    InMemoryTracer,
+    SpanRecord,
+    classify_failure,
+    common_attributes,
+    new_trace_id,
+)
 from matraix.enterprise.store import (
     create_tenant_with_default_org,
     open_enterprise_store,
@@ -148,7 +174,14 @@ __all__ = [
     "EntityId",
     "EntityNotFoundError",
     "estimate_experiment_cost",
+    "evaluate_execution",
     "evaluate_policy",
+    "EvaluationBundle",
+    "EvaluationResult",
+    "EvaluatorKind",
+    "FAILURE_CLASSES",
+    "FailureClass",
+    "FailureRecord",
     "EventBus",
     "EventId",
     "EventKind",
@@ -164,6 +197,18 @@ __all__ = [
     "GenerationBackend",
     "get_worker",
     "InMemoryEnterpriseStore",
+    "InMemoryTracer",
+    "classify_failure",
+    "common_attributes",
+    "MetricLevel",
+    "MetricPoint",
+    "MetricsRegistry",
+    "AggregatedMetric",
+    "record_execution_observability",
+    "supplemental_llm_judge",
+    "SYNTHETIC_METRIC_LIMITATION",
+    "SpanRecord",
+    "new_trace_id",
     "map_experiment_to_harbor_job",
     "ModelCapabilities",
     "ModelGateway",

@@ -61,5 +61,11 @@ nav:
       - Security model: enterprise/SECURITY_MODEL.md
       - Governance: enterprise/GOVERNANCE.md
       - Implementation roadmap: enterprise/IMPLEMENTATION_ROADMAP.md
+      - API: enterprise/api.md
+      - Population builder: enterprise/population-builder.md
+      - Experiments: enterprise/experiments.md
+      - Model gateway: enterprise/model-gateway.md
+      - Runtime: enterprise/runtime.md
+      - Telemetry: enterprise/telemetry.md
   - ADR:
       - 0001 Platform boundaries: adr/0001-enterprise-platform-boundaries.md

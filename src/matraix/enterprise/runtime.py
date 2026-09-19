@@ -11,6 +11,7 @@ to every worker. Domain types stay cloud-neutral. ``matraix run`` is unchanged.
 from __future__ import annotations
 
 import os
+import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
@@ -45,9 +46,11 @@ from matraix.enterprise.ids import (
 from matraix.enterprise.model_gateway import (
     ModelPolicy,
     ModelRequest,
+    ModelResponse,
     complete_model,
     resolve_model_policy,
 )
+from matraix.enterprise.observability import record_execution_observability
 from matraix.enterprise.policy import (
     DataClassification,
     PolicyDecision,
@@ -393,6 +396,95 @@ def _publish(
     return event
 
 
+def _observe_and_store(
+    context: WorkerContext,
+    *,
+    experiment: Experiment,
+    execution_id: ExecutionId,
+    status: str,
+    decision: PolicyDecision,
+    reasons: tuple[str, ...],
+    result: dict[str, Any],
+    existing: list[Artifact],
+    completion: ModelResponse | None,
+    trial_slots: int,
+    start_ns: int,
+) -> tuple[dict[str, Any], tuple[str, ...]]:
+    latency_ms = max(0.0, (time.time_ns() - start_ns) / 1_000_000)
+    tokens = completion.usage.total_tokens if completion is not None else 0
+    cost = completion.usage.estimated_cost_usd if completion is not None else 0.0
+    snapshot = record_execution_observability(
+        tenant_id=experiment.tenant_id,
+        experiment_id=experiment.id,
+        execution_id=execution_id,
+        status=status,
+        decision=decision.value,
+        reasons=reasons,
+        result=result,
+        artifacts=[item.to_dict() for item in existing],
+        task=experiment.task_path,
+        model=experiment.model_name or (completion.provider if completion else "sandbox"),
+        seed=experiment.random_seed,
+        tokens=tokens,
+        cost_usd=cost,
+        tool_calls=0,
+        trial_slots=trial_slots,
+        latency_ms=latency_ms,
+    )
+    extras: list[Artifact] = []
+    for kind, key in (
+        ("trace", "trace"),
+        ("metrics", "metrics"),
+        ("evaluation", "evaluation"),
+    ):
+        extras.append(
+            _new_artifact(
+                experiment.tenant_id,
+                kind=kind,
+                name=kind,
+                content=snapshot[key],
+                execution_id=execution_id,
+                experiment_id=experiment.id,
+            )
+        )
+    if snapshot["failure"]:
+        extras.append(
+            _new_artifact(
+                experiment.tenant_id,
+                kind="failure",
+                name="failure",
+                content=snapshot["failure"],
+                execution_id=execution_id,
+                experiment_id=experiment.id,
+            )
+        )
+    stored_ids: list[str] = []
+    for artifact in [*existing, *extras]:
+        context.store.put_artifact(artifact)
+        stored_ids.append(artifact.id.value)
+        _publish(
+            context,
+            experiment.tenant_id,
+            EventKind.ARTIFACT_WRITTEN,
+            execution_id=execution_id,
+            experiment_id=experiment.id,
+            payload={"artifact_id": artifact.id.value, "kind": artifact.kind},
+        )
+    merged = {
+        **result,
+        "trace_id": snapshot["trace_id"],
+        "evaluation": {
+            "passed": snapshot["evaluation"]["passed"],
+            "synthetic_equivalent_to_human_research": False,
+            "recommended_human_validation": True,
+        },
+        "failure": snapshot["failure"]["classification"] if snapshot["failure"] else None,
+        "code_version": snapshot["evaluation"].get("code_version"),
+        "seed": experiment.random_seed,
+    }
+    return merged, tuple(stored_ids)
+
+
 class LocalSandboxWorker:
     """Sandbox execution path. Never imports or constructs ``harbor.Job``."""
 
@@ -405,6 +497,7 @@ class LocalSandboxWorker:
         experiment = request.experiment
         tenant_id = experiment.tenant_id
         execution_id = _new_execution_id(tenant_id)
+        start_ns = time.time_ns()
         policy = resolve_model_policy(tenant_id, context.policy)
         evaluation = evaluate_policy(
             PolicyRequest(
@@ -451,12 +544,26 @@ class LocalSandboxWorker:
             payload={"decision": evaluation.decision.value, "reasons": list(evaluation.reasons)},
         )
         if evaluation.decision is PolicyDecision.DENY:
+            result, artifact_ids = _observe_and_store(
+                context,
+                experiment=experiment,
+                execution_id=execution_id,
+                status=ExecutionStatus.DENIED.value,
+                decision=evaluation.decision,
+                reasons=evaluation.reasons,
+                result={"denied": True},
+                existing=[],
+                completion=None,
+                trial_slots=trial_slots,
+                start_ns=start_ns,
+            )
             record = ExecutionRecord(
                 **base,
                 status=ExecutionStatus.DENIED,
                 decision=evaluation.decision,
                 reasons=evaluation.reasons,
-                result={"denied": True},
+                artifact_ids=artifact_ids,
+                result=result,
             )
             _publish(
                 context,
@@ -468,12 +575,26 @@ class LocalSandboxWorker:
             )
             return context.store.put_execution(record)
         if evaluation.decision is PolicyDecision.ALLOW_WITH_APPROVAL and not request.approved:
+            result, artifact_ids = _observe_and_store(
+                context,
+                experiment=experiment,
+                execution_id=execution_id,
+                status=ExecutionStatus.HELD.value,
+                decision=evaluation.decision,
+                reasons=evaluation.reasons,
+                result={"held_for_approval": True},
+                existing=[],
+                completion=None,
+                trial_slots=trial_slots,
+                start_ns=start_ns,
+            )
             record = ExecutionRecord(
                 **base,
                 status=ExecutionStatus.HELD,
                 decision=evaluation.decision,
                 reasons=evaluation.reasons,
-                result={"held_for_approval": True},
+                artifact_ids=artifact_ids,
+                result=result,
             )
             _publish(
                 context,
@@ -560,18 +681,6 @@ class LocalSandboxWorker:
                 experiment_id=experiment.id,
                 payload={"tick": context.clock.now()},
             )
-        stored_ids: list[str] = []
-        for artifact in artifacts:
-            context.store.put_artifact(artifact)
-            stored_ids.append(artifact.id.value)
-            _publish(
-                context,
-                tenant_id,
-                EventKind.ARTIFACT_WRITTEN,
-                execution_id=execution_id,
-                experiment_id=experiment.id,
-                payload={"artifact_id": artifact.id.value, "kind": artifact.kind},
-            )
         result = {
             "sandbox": True,
             "replaced_harbor_job": False,
@@ -580,13 +689,27 @@ class LocalSandboxWorker:
             "world_state_enabled": context.world.is_enabled(tenant_id),
             "clock_tick": context.clock.now(),
         }
+        reasons = evaluation.reasons + ("local sandbox worker; harbor.Job not constructed",)
+        result, artifact_ids = _observe_and_store(
+            context,
+            experiment=experiment,
+            execution_id=execution_id,
+            status=ExecutionStatus.COMPLETED.value,
+            decision=evaluation.decision,
+            reasons=reasons,
+            result=result,
+            existing=artifacts,
+            completion=completion,
+            trial_slots=trial_slots,
+            start_ns=start_ns,
+        )
         record = ExecutionRecord(
             **base,
             status=ExecutionStatus.COMPLETED,
             decision=evaluation.decision,
-            reasons=evaluation.reasons + ("local sandbox worker; harbor.Job not constructed",),
+            reasons=reasons,
             harbor_job_name=harbor_job_name,
-            artifact_ids=tuple(stored_ids),
+            artifact_ids=artifact_ids,
             result=result,
         )
         stored = context.store.put_execution(record)
@@ -616,10 +739,27 @@ class RemoteWorkerStub:
         experiment = request.experiment
         tenant_id = experiment.tenant_id
         execution_id = _new_execution_id(tenant_id)
+        start_ns = time.time_ns()
         now = _utcnow()
         reasons = (
             f"{self.kind.value} worker is a stub",
             "same Experiment type; no Docker/Kubernetes/queue SDK imported",
+        )
+        trial_slots = resolve_trial_count(
+            experiment, population_target=request.population_target
+        )
+        result, artifact_ids = _observe_and_store(
+            context,
+            experiment=experiment,
+            execution_id=execution_id,
+            status=ExecutionStatus.UNAVAILABLE.value,
+            decision=PolicyDecision.SANDBOX_ONLY,
+            reasons=reasons,
+            result={"available": False, "stub": True},
+            existing=[],
+            completion=None,
+            trial_slots=trial_slots,
+            start_ns=start_ns,
         )
         record = ExecutionRecord(
             id=execution_id,
@@ -629,11 +769,10 @@ class RemoteWorkerStub:
             status=ExecutionStatus.UNAVAILABLE,
             decision=PolicyDecision.SANDBOX_ONLY,
             reasons=reasons,
-            trial_slots=resolve_trial_count(
-                experiment, population_target=request.population_target
-            ),
+            trial_slots=trial_slots,
             concurrency=experiment.execution_budget.max_concurrency or 1,
-            result={"available": False, "stub": True},
+            artifact_ids=artifact_ids,
+            result=result,
             created_at=now,
             updated_at=now,
         )
@@ -687,6 +826,23 @@ class DataPlane:
         execution_id: ExecutionId | None = None,
     ) -> list[EnterpriseEvent]:
         return self.store.list_events(tenant_id, execution_id=execution_id)
+
+    def artifact_by_kind(
+        self,
+        tenant_id: TenantId,
+        execution_id: ExecutionId,
+        kind: str,
+    ) -> Artifact:
+        items = [
+            item
+            for item in self.list_artifacts(tenant_id, execution_id=execution_id)
+            if item.kind == kind
+        ]
+        if not items:
+            raise EntityNotFoundError(
+                f"unknown {kind} artifact for execution {execution_id.value}"
+            )
+        return items[-1]
 
 
 class ExecutionPlane:

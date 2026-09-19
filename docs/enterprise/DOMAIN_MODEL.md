@@ -164,6 +164,10 @@ Control-plane **launch record** (`Experiment`, alias `EnterpriseExperiment`). De
 
 `EnterpriseRuntime` (`matraix.enterprise.runtime`) is additive. `WorkRequest` carries the existing `Experiment`. `ExecutionRecord` is tenant-scoped (`ExecutionId`). Local worker writes `Artifact` and `EnterpriseEvent` rows. `WorldState` is disabled unless explicitly enabled. See [runtime.md](runtime.md).
 
+### Telemetry / evaluation
+
+OTel-shaped traces (`InMemoryTracer`), hierarchical metrics (`MetricsRegistry`: step → enterprise), and `FailureClass` live in `matraix.enterprise.telemetry` / `metrics`. The evaluation SDK (`evaluate_execution`) uses deterministic verifiers as pass/fail authority; LLM judges are supplemental and never flip the result. Snapshots persist as tenant-scoped artifacts (`trace`, `metrics`, `evaluation`, `failure`). Synthetic outputs are **not** human research (`synthetic_equivalent_to_human_research: false`). See [telemetry.md](telemetry.md).
+
 ## Persistence
 
 `EnterpriseRepository` is the contract. Two backends:

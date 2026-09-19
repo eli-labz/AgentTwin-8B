@@ -46,6 +46,11 @@ def test_openapi_exposes_v1_paths() -> None:
     assert "/api/v1/executions" in paths
     assert "/api/v1/experiments/{experiment_id}/execute" in paths
     assert "/api/v1/events" in paths
+    assert "/api/v1/executions/{execution_id}/trace" in paths
+    assert "/api/v1/executions/{execution_id}/metrics" in paths
+    assert "/api/v1/executions/{execution_id}/evaluation" in paths
+    assert "/api/v1/executions/{execution_id}/evaluate" in paths
+    assert "/api/v1/failures" in paths
     assert spec["info"]["title"] == "AgentTwin Enterprise API"
 
 
@@ -527,13 +532,46 @@ def test_execute_experiment_local_sandbox_and_isolation() -> None:
     assert body["decision"] == "SANDBOX_ONLY"
     assert body["worker_kind"] == "local"
     assert body["result"]["replaced_harbor_job"] is False
+    assert body["result"]["trace_id"]
+    assert body["result"]["evaluation"]["synthetic_equivalent_to_human_research"] is False
     assert body["harbor_job_name"].startswith("enterprise-")
 
     artifacts = client.get(
         f"/api/v1/executions/{body['id']}/artifacts", headers=headers
     )
     assert artifacts.status_code == 200
-    assert {item["kind"] for item in artifacts.json()} >= {"harbor_job", "completion"}
+    assert {item["kind"] for item in artifacts.json()} >= {
+        "harbor_job",
+        "completion",
+        "trace",
+        "metrics",
+        "evaluation",
+    }
+
+    trace = client.get(f"/api/v1/executions/{body['id']}/trace", headers=headers)
+    assert trace.status_code == 200
+    assert trace.json()["trace_id"] == body["result"]["trace_id"]
+    metrics = client.get(f"/api/v1/executions/{body['id']}/metrics", headers=headers)
+    assert metrics.status_code == 200
+    assert metrics.json()["hierarchy"][0] == "step"
+    evaluation = client.get(
+        f"/api/v1/executions/{body['id']}/evaluation", headers=headers
+    )
+    assert evaluation.status_code == 200
+    assert evaluation.json()["synthetic_equivalent_to_human_research"] is False
+    reeval = client.post(
+        f"/api/v1/executions/{body['id']}/evaluate",
+        json={"include_llm_judge": True},
+        headers=headers,
+    )
+    assert reeval.status_code == 200
+    assert reeval.json()["passed"] is True
+    assert any(item["kind"] == "llm_judge" for item in reeval.json()["results"])
+    assert all(
+        item["used_for_pass_fail"] is False
+        for item in reeval.json()["results"]
+        if item["kind"] == "llm_judge"
+    )
 
     events = client.get("/api/v1/events", headers=headers)
     assert events.status_code == 200
@@ -557,3 +595,19 @@ def test_execute_experiment_local_sandbox_and_isolation() -> None:
         headers={"X-Tenant-Id": bravo["id"]},
     )
     assert missing.status_code == 404
+    hidden_trace = client.get(
+        f"/api/v1/executions/{body['id']}/trace",
+        headers={"X-Tenant-Id": bravo["id"]},
+    )
+    assert hidden_trace.status_code == 404
+    hidden_eval = client.get(
+        f"/api/v1/executions/{body['id']}/evaluation",
+        headers={"X-Tenant-Id": bravo["id"]},
+    )
+    assert hidden_eval.status_code == 404
+    hidden_failures = client.get(
+        "/api/v1/failures",
+        headers={"X-Tenant-Id": bravo["id"]},
+    )
+    assert hidden_failures.status_code == 200
+    assert hidden_failures.json() == []

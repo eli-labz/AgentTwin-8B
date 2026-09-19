@@ -197,4 +197,4 @@ def test_sandbox_path_works_without_task_path() -> None:
         item.kind
         for item in store.list_artifacts(tenant.id, execution_id=record.id)
     }
-    assert kinds == {"completion"}
+    assert kinds >= {"completion", "trace", "metrics", "evaluation"}

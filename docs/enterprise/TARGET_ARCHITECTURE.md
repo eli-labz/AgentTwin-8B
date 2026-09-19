@@ -1,6 +1,6 @@
 # Target Architecture — AgentTwin Enterprise
 
-This is the target modular platform. Phase 0 shipped **contracts and a tenant-scoped domain model**. Phase 1 added **persistence + `/api/v1`**. Phase 2 added **org-graph edges and a population-shape builder**. Phase 3 added **experiment launch records** mapped onto Harbor job YAML. Phase 4 added the **model and policy gateways** beside LiteLLM. Phase 5 adds **control / data / execution planes** and a local sandbox worker. Harbor, Playground, and the 1,290-dimension persona stack remain the simulation engines.
+This is the target modular platform. Phase 0 shipped **contracts and a tenant-scoped domain model**. Phase 1 added **persistence + `/api/v1`**. Phase 2 added **org-graph edges and a population-shape builder**. Phase 3 added **experiment launch records** mapped onto Harbor job YAML. Phase 4 added the **model and policy gateways** beside LiteLLM. Phase 5 added **control / data / execution planes** and a local sandbox worker. Phase 6 adds **OTel-shaped traces, hierarchical metrics, a failure taxonomy, and a deterministic-first evaluation SDK**. Harbor, Playground, and the 1,290-dimension persona stack remain the simulation engines.
 
 ## Layered platform
 
@@ -40,7 +40,7 @@ This is the target modular platform. Phase 0 shipped **contracts and a tenant-sc
 | Task / environment | `application/tasks` + Harbor environments | Workflow contracts; sandboxed enterprise adapters |
 | Model gateway | LiteLLM + `provider_credentials` (unchanged) | `ModelProvider` / `ModelPolicy` / residency routing |
 | Policy / identity | Task network policy; Harbor GitHub OAuth | `evaluate_policy` decisions; RBAC+ABAC / OIDC later |
-| Telemetry | `JobResult`, structured_output, `matraix results` | OTel, hierarchical metrics, audit log |
+| Telemetry | `JobResult`, structured_output, `matraix results` | OTel-shaped traces, hierarchical metrics, failure taxonomy, eval SDK |
 | Data / artifacts | `jobs/`, persona datasets, Parquet | Tenant-prefixed stores; encryption-ready |
 | Infrastructure | local / Modal / GKE / use.computer | `WorkerKind` + local sandbox worker; remote stubs |
 
@@ -118,7 +118,7 @@ Contracts are **interfaces**, not a rewrite. Phase 0 ships the first Python type
 4. Tenancy is enforced in the domain/store, not only in UI filters.
 5. Existing Harbor jobs remain runnable without a tenant (legacy path) until Phase 1 APIs wrap them.
 
-## Phase 0–5 slice actually implemented
+## Phase 0–6 slice actually implemented
 
 - Typed IDs and entities: `src/matraix/enterprise/`
 - `EnterpriseRepository` with in-memory (default) and SQLite backends
@@ -131,6 +131,7 @@ Contracts are **interfaces**, not a rewrite. Phase 0 ships the first Python type
 - Model gateway types + catalog routing beside LiteLLM (no provider SDK import)
 - Control / data / execution planes; local sandbox worker; Docker/K8s/queue/batch stubs
 - EventBus + SimulationClock + optional WorldState (off by default)
+- OTel-shaped traces + hierarchical metrics + 12-class failure taxonomy + evaluation SDK (deterministic first; LLM judges supplemental)
 - Tests under `tests/unit/enterprise`, `tests/multitenancy`, `tests/security`
 
-Not yet: Harbor filesystem tenancy, live LiteLLM adapter, wired Docker/K8s workers, console navigation.
+Not yet: Harbor filesystem tenancy, live LiteLLM adapter, wired Docker/K8s workers, console navigation / dashboards.

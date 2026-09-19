@@ -1,6 +1,6 @@
 # Enterprise API (`/api/v1`)
 
-Phase 1–5 control-plane skeleton. This is **not** the Playground API
+Phase 1–6 control-plane skeleton. This is **not** the Playground API
 (`docs/application/playground-api.md`). Harbor jobs and `matraix run` stay
 unchanged.
 
@@ -73,6 +73,11 @@ Equivalent: `uvicorn matraix.enterprise.api:app --port 8090`.
 | `GET` | `/api/v1/executions/{id}` | required | Get one execution |
 | `GET` | `/api/v1/executions/{id}/artifacts` | required | Artifacts for one execution |
 | `GET` | `/api/v1/events` | required | Runtime events; optional `?execution_id=` |
+| `GET` | `/api/v1/executions/{id}/trace` | required | OTel-shaped trace snapshot |
+| `GET` | `/api/v1/executions/{id}/metrics` | required | Hierarchical metrics + aggregates |
+| `GET` | `/api/v1/executions/{id}/evaluation` | required | Stored evaluation bundle |
+| `POST` | `/api/v1/executions/{id}/evaluate` | required | Re-run evaluation SDK (LLM judge optional / supplemental) |
+| `GET` | `/api/v1/failures` | required | Failure taxonomy artifacts; optional `?execution_id=` |
 
 ### Create tenant
 
@@ -195,11 +200,24 @@ caps, `allow_external`, and `allow_live`. Env overlays:
 
 `POST /api/v1/experiments/{id}/execute` runs the **local sandbox path**:
 policy → Harbor job **document** (if `task_path`) → sandbox completion →
-events. It does not construct `harbor.Job` and does not change `matraix run`.
-Remote kinds (`docker`, `kubernetes`, `queue`, `batch`) accept the same
-`Experiment` and return `status: unavailable`. Default policy remains
-`SANDBOX_ONLY`. See [runtime.md](runtime.md). Worker default:
-`MATRIX_ENTERPRISE_WORKER` (default `local`).
+events → Phase 6 observability artifacts. It does not construct `harbor.Job`
+and does not change `matraix run`. Remote kinds (`docker`, `kubernetes`,
+`queue`, `batch`) accept the same `Experiment` and return
+`status: unavailable`. Default policy remains `SANDBOX_ONLY`. See
+[runtime.md](runtime.md). Worker default: `MATRIX_ENTERPRISE_WORKER`
+(default `local`).
+
+### Traces, metrics, evaluation
+
+Local execute writes tenant-scoped artifacts (`trace`, `metrics`,
+`evaluation`, and `failure` when the run did not pass). `GET .../trace`
+returns OpenTelemetry-shaped JSON (`resource_spans` / `scope_spans`) without
+importing an OTel SDK. Metrics include the step→enterprise hierarchy,
+segmentation, provenance, and a 95% CI when `n >= 2`. Evaluation bundles
+always set `synthetic_equivalent_to_human_research: false` — synthetic
+outputs are **not** human research. LLM judges, if requested on
+`POST .../evaluate`, are supplemental and never flip pass/fail. See
+[telemetry.md](telemetry.md).
 
 ## Persistence
 

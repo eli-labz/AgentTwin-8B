@@ -54,7 +54,7 @@ Each phase must leave the repository **runnable**: `matraix smoke`, existing Har
 
 **Exit:** forbidden provider or classified data is DENY/SANDBOX; fallback respects policy.
 
-## Phase 5 — Distributed runtime *(this change)*
+## Phase 5 — Distributed runtime *(accepted)*
 
 - Explicit control / data / execution planes ([runtime.md](runtime.md))
 - Worker abstraction: **local** sandbox path; Docker / Kubernetes / queue / batch named stubs
@@ -65,13 +65,14 @@ Each phase must leave the repository **runnable**: `matraix smoke`, existing Har
 
 **Exit:** same experiment runs local or remote without changing domain types.
 
-## Phase 6 — Telemetry, metrics, evaluation
+## Phase 6 — Telemetry, metrics, evaluation *(this change)*
 
-- OpenTelemetry-compatible traces (`trace_id`, `tenant_id`, experiment/persona/task, tokens, cost, policy events)
-- Hierarchical metrics SDK (step → enterprise) with intervals and segmentation
+- OpenTelemetry-compatible traces (`trace_id`, `tenant_id`, experiment/persona/task, tokens, cost, policy events) — no OTel SDK import ([telemetry.md](telemetry.md))
+- Hierarchical metrics SDK (step → enterprise) with intervals, segmentation, provenance
 - Failure taxonomy (PERCEPTION_FAILURE … ENVIRONMENT_FAILURE)
 - Evaluation SDK; LLM judges remain supplemental to deterministic verifiers
-- Never present synthetic outputs as human research
+- Never present synthetic outputs as human research (`synthetic_equivalent_to_human_research: false`)
+- Wired into the local sandbox worker as artifacts (`trace` / `metrics` / `evaluation` / `failure`) and `/api/v1` telemetry routes
 
 **Exit:** a result traces to execution, persona, model, seed, code version.
 
@@ -122,4 +123,4 @@ Each phase must leave the repository **runnable**: `matraix smoke`, existing Har
 
 ## Next implementation target (after this PR)
 
-**Phase 6:** telemetry, metrics, and evaluation — OpenTelemetry-compatible traces (`trace_id`, `tenant_id`, experiment/persona/task, tokens, cost, policy events), hierarchical metrics, failure taxonomy, evaluation SDK. LLM judges stay supplemental to deterministic verifiers. Never present synthetic outputs as human research.
+**Phase 7:** enterprise console — evolve Playground navigation (Overview, Organizations, Populations, Personas, Experiments, Tasks, Environments, Models, Evaluations, Analytics, Governance, Audit, Infrastructure, Settings); experiment wizard (population → launch); authenticate the API and close open CORS for non-dev. Consume Phase 6 trace / metrics / evaluation artifacts; do not present synthetic outputs as human research.

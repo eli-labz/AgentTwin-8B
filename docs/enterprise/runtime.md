@@ -34,6 +34,9 @@ The **local sandbox path**:
 3. Call the model gateway sandbox completer.
 4. Schedule logical trial slots on `SimulationClock` (capped) and publish events.
 5. Persist `ExecutionRecord`, artifacts, and events.
+6. Record Phase 6 observability (OTel-shaped trace, hierarchical metrics,
+   evaluation bundle, optional failure class) as additional artifacts. See
+   [telemetry.md](telemetry.md).
 
 `WorldState` exists but stays **disabled** unless `enable_world_state` is
 explicit. That is not Harbor environment state and is not persistent memory.
@@ -49,4 +52,5 @@ Additive to Harbor trials: `execution_submitted`, `policy_evaluated`,
 ## API
 
 See [api.md](api.md): `GET /api/v1/workers`, `POST /api/v1/experiments/{id}/execute`,
-`/api/v1/executions`, `/api/v1/events`.
+`/api/v1/executions`, `/api/v1/events`, plus telemetry
+`/trace` `/metrics` `/evaluation` `/failures`.

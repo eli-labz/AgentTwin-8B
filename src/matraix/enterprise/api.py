@@ -66,6 +66,7 @@ from matraix.enterprise.population_builder import (
     build_population_declaration,
 )
 from matraix.enterprise.repositories import EnterpriseRepository
+from matraix.enterprise.observability import evaluation_from_stored
 from matraix.enterprise.runtime import EnterpriseRuntime, worker_catalog
 from matraix.enterprise.store import (
     create_tenant_with_default_org,
@@ -255,6 +256,10 @@ class ExecutionSubmitIn(BaseModel):
     experiment_id: str | None = None
 
 
+class EvaluationSubmitIn(BaseModel):
+    include_llm_judge: bool = False
+
+
 def _configured_token() -> str | None:
     token = os.environ.get(API_TOKEN_ENV, "").strip()
     return token or None
@@ -411,6 +416,10 @@ def create_enterprise_app(
             {
                 "name": "runtime",
                 "description": "Control / data / execution planes and worker catalog",
+            },
+            {
+                "name": "telemetry",
+                "description": "Traces, hierarchical metrics, evaluation (synthetic ≠ human research)",
             },
         ],
     )
@@ -1041,6 +1050,74 @@ def create_enterprise_app(
             item.to_dict()
             for item in _runtime().data.list_events(tenant, execution_id=resolved)
         ]
+
+    def _require_execution(tenant: TenantId, execution_id: str):
+        resolved = ExecutionId(tenant, execution_id)
+        record = _runtime().execution.get(tenant, resolved)
+        return resolved, record
+
+    @app.get("/api/v1/executions/{execution_id}/trace", tags=["telemetry"])
+    def get_execution_trace(
+        execution_id: str,
+        x_tenant_id: Annotated[str | None, Header(alias=TENANT_HEADER)] = None,
+    ) -> dict[str, Any]:
+        tenant = _require_tenant_header(x_tenant_id)
+        resolved, _record = _require_execution(tenant, execution_id)
+        return _runtime().data.artifact_by_kind(tenant, resolved, "trace").content
+
+    @app.get("/api/v1/executions/{execution_id}/metrics", tags=["telemetry"])
+    def get_execution_metrics(
+        execution_id: str,
+        x_tenant_id: Annotated[str | None, Header(alias=TENANT_HEADER)] = None,
+    ) -> dict[str, Any]:
+        tenant = _require_tenant_header(x_tenant_id)
+        resolved, _record = _require_execution(tenant, execution_id)
+        return _runtime().data.artifact_by_kind(tenant, resolved, "metrics").content
+
+    @app.get("/api/v1/executions/{execution_id}/evaluation", tags=["telemetry"])
+    def get_execution_evaluation(
+        execution_id: str,
+        x_tenant_id: Annotated[str | None, Header(alias=TENANT_HEADER)] = None,
+    ) -> dict[str, Any]:
+        tenant = _require_tenant_header(x_tenant_id)
+        resolved, _record = _require_execution(tenant, execution_id)
+        return _runtime().data.artifact_by_kind(tenant, resolved, "evaluation").content
+
+    @app.post("/api/v1/executions/{execution_id}/evaluate", tags=["telemetry"])
+    def reevaluate_execution(
+        execution_id: str,
+        payload: EvaluationSubmitIn | None = None,
+        x_tenant_id: Annotated[str | None, Header(alias=TENANT_HEADER)] = None,
+    ) -> dict[str, Any]:
+        tenant = _require_tenant_header(x_tenant_id)
+        resolved, record = _require_execution(tenant, execution_id)
+        artifacts = [
+            item.to_dict()
+            for item in _runtime().data.list_artifacts(tenant, execution_id=resolved)
+        ]
+        body = payload or EvaluationSubmitIn()
+        bundle = evaluation_from_stored(
+            tenant_id=tenant,
+            execution_id=resolved,
+            experiment_id=record.experiment_id,
+            result=record.result,
+            artifacts=artifacts,
+            status=record.status.value,
+            reasons=record.reasons,
+            seed=record.result.get("seed"),
+            include_llm_judge=body.include_llm_judge,
+        )
+        return bundle.to_dict()
+
+    @app.get("/api/v1/failures", tags=["telemetry"])
+    def list_failures(
+        x_tenant_id: Annotated[str | None, Header(alias=TENANT_HEADER)] = None,
+        execution_id: Annotated[str | None, Query()] = None,
+    ) -> list[dict[str, Any]]:
+        tenant = _require_tenant_header(x_tenant_id)
+        resolved = ExecutionId(tenant, execution_id) if execution_id else None
+        items = _runtime().data.list_artifacts(tenant, execution_id=resolved)
+        return [item.content for item in items if item.kind == "failure"]
 
     return app
 
