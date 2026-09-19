@@ -2,7 +2,7 @@
 
 Each phase must leave the repository **runnable**: `matraix smoke`, existing Harbor recipes, Playground, and the curated pytest list must keep working. Prefer additive modules over rewrites.
 
-## Phase 0 — Audit, architecture, domain foundation *(this change)*
+## Phase 0 — Audit, architecture, domain foundation *(accepted)*
 
 - Inspected repository → [REPOSITORY_AUDIT.md](REPOSITORY_AUDIT.md)
 - Target layers + contracts → [TARGET_ARCHITECTURE.md](TARGET_ARCHITECTURE.md)
@@ -13,15 +13,15 @@ Each phase must leave the repository **runnable**: `matraix smoke`, existing Har
 
 **Exit:** docs exist; invalid persona schemas fail; cross-tenant get raises; existing smoke/unit paths still pass.
 
-## Phase 1 — Domain persistence, configuration, APIs
+## Phase 1 — Domain persistence, configuration, APIs *(this change)*
 
-- Repository interfaces + migrations (SQL or equivalent) without business logic in ORM models
-- Bind `TenantId` through a versioned `/api/v1` (tenants, populations, personas, experiments) with OpenAPI
-- Configuration: tenant settings, secrets abstraction (env/vault), no hard-coded keys
-- Do **not** require tenants for legacy `matraix run -c` yet; add an optional wrapper
-- CI: include `tests/multitenancy` and schema validation in the curated list if it is still allow-listed
+- Repository protocol `EnterpriseRepository` + SQLite migrations (`matraix.enterprise.migrations`); in-memory store remains the default / fallback
+- Versioned `/api/v1` for tenants, organizations, populations, personas with FastAPI OpenAPI (`docs/enterprise/api.md`); `matraix enterprise-api`
+- Configuration: `MATRIX_ENTERPRISE_STORE`, `MATRIX_ENTERPRISE_DB`, optional `MATRIX_ENTERPRISE_API_TOKEN` (env only)
+- Legacy `matraix run -c` unchanged; optional `--tenant-id` on `generate_application_job.py` writes sidecar metadata only
+- Tests: SQLite round-trips, API authz / tenant isolation, existing enterprise + smoke paths
 
-**Exit:** create tenant → org → population → wrap existing YAML persona via API or SDK skeleton.
+**Exit:** create tenant → default org → population → wrap existing YAML persona via API or repository.
 
 ## Phase 2 — Enterprise personas, org graph, populations
 
@@ -118,4 +118,4 @@ Each phase must leave the repository **runnable**: `matraix smoke`, existing Har
 
 ## Next implementation target (after this PR)
 
-**Phase 1 continuation:** persist `matraix.enterprise` through a repository + migration, add `/api/v1/tenants` (and populations/personas) without changing `matraix run` defaults, and thread `tenant_id` as optional metadata on generated job sidecars.
+**Phase 2:** persist optional org-graph edges, a population builder that can declare a 10k-shaped set without rewriting `persona/synthesis`, and keep Treiver / Full-DAG / 1M as generation backends. Optional follow-up on this API: experiment routes and binding Playground launches to `tenant_id`.

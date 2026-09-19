@@ -18,7 +18,7 @@ Rewriting Harbor or replacing the persona schema would destroy the strengths the
 4. **Existing persona YAML stays valid.** Enterprise dimensions are an optional `enterprise:` block. Legacy `persona_id` is retained as `legacy_persona_id`.
 5. **Provider independence.** Core entities have no Modal/GCP/AWS fields. Existing compute-family adapters stay in Playground/Harbor.
 6. **Simulation-only default.** `PolicyDecision.SANDBOX_ONLY` is the default enterprise execution posture. Synthetic personas are simulation parameters, not psychological equivalents of humans.
-7. **Phased delivery.** Phase 0 is docs + domain + tests. APIs, persistence, and console come in later phases so the repo stays runnable each step.
+7. **Phased delivery.** Phase 0 is docs + domain + tests. Phase 1 adds repository persistence and `/api/v1` without changing `matraix run`. Console comes later so the repo stays runnable each step.
 
 ## Consequences
 
@@ -31,8 +31,8 @@ Rewriting Harbor or replacing the persona schema would destroy the strengths the
 ### Negative / follow-ups
 
 - Dual identifiers (`legacy_persona_id` vs `PersonaId`) until Playground learns tenants.
-- Harbor `jobs/` directories are not tenant-isolated until Phase 1 metadata wrapping.
-- In-memory store is not durable; must not be mistaken for production IAM.
+- Harbor `jobs/` directories are not tenant-isolated; optional sidecar `tenant_id` is metadata only.
+- SQLite is a local durable backend, not production IAM or multi-region HA.
 
 ## Alternatives rejected
 

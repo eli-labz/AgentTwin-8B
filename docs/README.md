@@ -31,7 +31,7 @@ uv run --with mkdocs-material mkdocs serve   # http://127.0.0.1:8000
 
 Optional packages: [packages.md](packages.md).
 
-Enterprise control-plane types (Phase 0, additive): [enterprise/](enterprise/REPOSITORY_AUDIT.md).
+Enterprise control-plane (Phase 1, additive): [enterprise/](enterprise/REPOSITORY_AUDIT.md), [API](enterprise/api.md).
 
 ---
 
@@ -70,7 +70,7 @@ docs/
 ├── persona/               schema · 1M · pipeline · validation
 ├── application/           tasks overview · task guide · Playground API
 ├── environment/           Matraix Playground · agents · web modes · scaling
-├── enterprise/            AgentTwin Enterprise architecture (Phase 0)
+├── enterprise/            AgentTwin Enterprise architecture + /api/v1
 ├── adr/                   architecture decision records
 └── packages.md
 

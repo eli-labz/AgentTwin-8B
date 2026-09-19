@@ -12,7 +12,7 @@ See [REPOSITORY_AUDIT.md](REPOSITORY_AUDIT.md) §17. Summary:
 - Host survey/chat can honor `MATRIX_MAX_COST_USD` (`playground.budget.BudgetExceededError`).
 - No CSRF tokens on Playground or Viewer.
 
-Phase 0 does not turn Playground into an IdP. It defines the **domain isolation rules** later APIs must implement.
+Phase 0 defined the **domain isolation rules**. Phase 1 binds them on `/api/v1` and SQLite. Playground is still not an IdP.
 
 ## Tenancy isolation
 
@@ -25,11 +25,17 @@ Enforced in Phase 0 **by construction**:
 3. Store buckets are keyed by tenant. `get_*` requires `(tenant_id, scoped_id)`.
 4. If `scoped_id.tenant_id != tenant_id`, the store raises `CrossTenantAccessError` — it does not search other buckets and does not return a silent miss that could be used for existence oracles across tenants.
 
-Future bindings (Phase 1+), each tenant-scoped:
+Phase 1 bindings:
+
+- REST `/api/v1` requires `X-Tenant-Id` on tenant-scoped routes. Lookups construct scoped IDs from that header so another tenant's rows are not returned.
+- Optional `MATRIX_ENTERPRISE_API_TOKEN` (Bearer). Unset = local/dev open API, same posture as Playground.
+- SQLite rows are keyed by `tenant_id`. Cross-tenant `get_*` still raises `CrossTenantAccessError`.
+
+Future bindings, each tenant-scoped:
 
 - REST queries, object storage prefixes, logs, analytics, vector indexes, caches, job queues, artifacts, secrets, reports.
 
-Legacy Harbor `jobs/<job_name>/` is **not** tenant-prefixed today. Wrapping jobs with `tenant_id` in metadata is a Phase 1 task; do not claim filesystem isolation exists yet.
+Legacy Harbor `jobs/<job_name>/` is **not** tenant-prefixed. Generated job sidecars may include optional `tenant_id` metadata; that is not filesystem isolation.
 
 ## Policy
 
@@ -79,15 +85,15 @@ Playground must not remain an open CORS API once it binds to this model.
 
 ## Secure defaults (checklist)
 
-From the master prompt — status after Phase 0:
+From the master prompt — status after Phase 1:
 
-| Requirement | Phase 0 |
+| Requirement | Phase 1 |
 |-------------|---------|
-| Tenant isolation in domain/store | Yes (in-memory) |
+| Tenant isolation in domain/store | Yes (in-memory + SQLite) |
 | Policy vocabulary + sandbox default | Yes |
 | Classification enum | Yes |
 | No hard-coded secrets in new code | Yes |
-| API authorization / CSRF / rate limits | Not yet |
+| API authorization / CSRF / rate limits | Optional Bearer token; no CSRF / rate limits yet |
 | Audit log | Not yet |
 | Dependency scanning in CI | Not yet |
 | Container isolation | Existing Harbor/Docker (unchanged) |

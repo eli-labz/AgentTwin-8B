@@ -45,6 +45,12 @@ def test_export_hint_lines_are_provider_aware() -> None:
     assert resolve_provider_credential("openai/gpt-4o-mini").env_var != "ANTHROPIC_API_KEY"
 
 
+def test_generate_parser_documents_optional_tenant_id() -> None:
+    source = Path(gen.__file__).read_text(encoding="utf-8")
+    assert "--tenant-id" in source
+    assert "Does not change matraix run defaults" in source
+
+
 def test_format_run_instructions_local_uses_matraix_run() -> None:
     lines = gen.format_run_instructions(
         config_display="configs/jobs/application-task-job-recipe/job.yaml",

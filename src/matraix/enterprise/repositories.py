@@ -3,12 +3,16 @@
 Lookups always take a :class:`TenantId`. A scoped id from another tenant raises
 :class:`CrossTenantAccessError` instead of returning that tenant's data. Stores
 are partitioned by tenant so a missing local id cannot leak across tenants.
+
+:class:`InMemoryEnterpriseStore` is the default / test backend. Durable
+deployments use :class:`matraix.enterprise.sqlite_store.SqliteEnterpriseStore`
+via :func:`matraix.enterprise.store.open_enterprise_store`.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TypeVar
+from typing import Protocol, TypeVar
 
 from matraix.enterprise.entities import (
     Department,
@@ -19,7 +23,11 @@ from matraix.enterprise.entities import (
     Team,
     Tenant,
 )
-from matraix.enterprise.errors import CrossTenantAccessError, EntityNotFoundError
+from matraix.enterprise.errors import (
+    CrossTenantAccessError,
+    EnterpriseSchemaError,
+    EntityNotFoundError,
+)
 from matraix.enterprise.ids import (
     DepartmentId,
     EntityId,
@@ -32,6 +40,62 @@ from matraix.enterprise.ids import (
 )
 
 T = TypeVar("T")
+
+
+class EnterpriseRepository(Protocol):
+    """Persistence contract shared by in-memory and SQLite backends.
+
+    Implementations must not put business rules in an ORM layer — they
+    reconstruct domain entities and reuse constructor / tenant checks.
+    """
+
+    def put_tenant(self, tenant: Tenant) -> Tenant: ...
+
+    def get_tenant(self, tenant_id: TenantId) -> Tenant: ...
+
+    def list_tenants(self) -> list[Tenant]: ...
+
+    def put_organization(self, organization: Organization) -> Organization: ...
+
+    def get_organization(
+        self, tenant_id: TenantId, organization_id: OrganizationId
+    ) -> Organization: ...
+
+    def list_organizations(self, tenant_id: TenantId) -> list[Organization]: ...
+
+    def put_department(self, department: Department) -> Department: ...
+
+    def get_department(
+        self, tenant_id: TenantId, department_id: DepartmentId
+    ) -> Department: ...
+
+    def put_team(self, team: Team) -> Team: ...
+
+    def get_team(self, tenant_id: TenantId, team_id: TeamId) -> Team: ...
+
+    def put_population(self, population: Population) -> Population: ...
+
+    def get_population(
+        self, tenant_id: TenantId, population_id: PopulationId
+    ) -> Population: ...
+
+    def list_populations(self, tenant_id: TenantId) -> list[Population]: ...
+
+    def put_persona(self, persona: EnterprisePersona) -> EnterprisePersona: ...
+
+    def get_persona(
+        self, tenant_id: TenantId, persona_id: PersonaId
+    ) -> EnterprisePersona: ...
+
+    def list_personas(self, tenant_id: TenantId) -> list[EnterprisePersona]: ...
+
+    def put_experiment(self, experiment: Experiment) -> Experiment: ...
+
+    def get_experiment(
+        self, tenant_id: TenantId, experiment_id: ExperimentId
+    ) -> Experiment: ...
+
+    def close(self) -> None: ...
 
 
 def _require_tenant(tenant_id: TenantId, entity_id: EntityId) -> None:
@@ -65,6 +129,11 @@ class InMemoryEnterpriseStore:
         return self._buckets[tenant_id.value]
 
     def put_tenant(self, tenant: Tenant) -> Tenant:
+        for existing in self._tenants.values():
+            if existing.slug == tenant.slug and existing.id != tenant.id:
+                raise EnterpriseSchemaError(
+                    f"tenant slug {tenant.slug!r} already exists"
+                )
         self._tenants[tenant.id.value] = tenant
         self._buckets.setdefault(tenant.id.value, _TenantBucket())
         return tenant
@@ -74,6 +143,9 @@ class InMemoryEnterpriseStore:
             return self._tenants[tenant_id.value]
         except KeyError as exc:
             raise EntityNotFoundError(f"unknown tenant {tenant_id.value}") from exc
+
+    def list_tenants(self) -> list[Tenant]:
+        return list(self._tenants.values())
 
     def put_organization(self, organization: Organization) -> Organization:
         self._bucket(organization.tenant_id).organizations[organization.id.value] = (
@@ -91,6 +163,9 @@ class InMemoryEnterpriseStore:
             raise EntityNotFoundError(
                 f"unknown organization {organization_id.value}"
             ) from exc
+
+    def list_organizations(self, tenant_id: TenantId) -> list[Organization]:
+        return list(self._bucket(tenant_id).organizations.values())
 
     def put_department(self, department: Department) -> Department:
         bucket = self._bucket(department.tenant_id)
@@ -202,6 +277,9 @@ class InMemoryEnterpriseStore:
                 f"unknown experiment {experiment_id.value}"
             ) from exc
 
+    def close(self) -> None:
+        return None
+
 
 class EnterpriseStore(InMemoryEnterpriseStore):
-    """Stable name for the Phase 0 store contract."""
+    """Stable name for the Phase 0 in-memory store (dev / test fallback)."""

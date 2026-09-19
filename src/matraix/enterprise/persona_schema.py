@@ -142,6 +142,14 @@ class EnterpriseDimensions:
             value = getattr(self, name)
             object.__setattr__(self, name, dict(value or {}))
 
+    def to_dict(self) -> dict[str, dict[str, str]]:
+        """Serialize populated groups only (empty groups are omitted)."""
+        return {
+            name: dict(getattr(self, name))
+            for name in _OPTIONAL_STRING_GROUPS
+            if getattr(self, name)
+        }
+
 
 def validate_enterprise_dimensions(dims: EnterpriseDimensions) -> None:
     """Re-check a constructed enterprise block (unknown keys already rejected)."""

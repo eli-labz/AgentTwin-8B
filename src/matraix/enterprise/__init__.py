@@ -1,11 +1,11 @@
-"""AgentTwin Enterprise domain model (Phase 0 foundation).
+"""AgentTwin Enterprise domain model (Phase 0–1).
 
 This package is additive. It does not replace Harbor jobs, Playground, or the
 existing 1,290-dimension persona YAML schema. Enterprise fields are optional
 simulation parameters — not a claim of psychological equivalence to humans.
 
-Public surface is intentionally small: typed IDs, core entities, policy enums,
-and tenant-bound repository contracts.
+Public surface: typed IDs, core entities, policy enums, tenant-bound
+repositories (in-memory default, SQLite optional), and ``/api/v1``.
 """
 
 from matraix.enterprise.entities import (
@@ -46,8 +46,14 @@ from matraix.enterprise.ids import (
 )
 from matraix.enterprise.policy import PolicyDecision, PolicyRequest
 from matraix.enterprise.repositories import (
+    EnterpriseRepository,
     EnterpriseStore,
     InMemoryEnterpriseStore,
+)
+from matraix.enterprise.sqlite_store import SqliteEnterpriseStore
+from matraix.enterprise.store import (
+    create_tenant_with_default_org,
+    open_enterprise_store,
 )
 
 __all__ = [
@@ -59,6 +65,7 @@ __all__ = [
     "EnterpriseDimensions",
     "EnterprisePersona",
     "EnterpriseSchemaError",
+    "EnterpriseRepository",
     "EnterpriseStore",
     "EntityId",
     "EntityNotFoundError",
@@ -69,6 +76,7 @@ __all__ = [
     "InMemoryEnterpriseStore",
     "ModelId",
     "ObservationId",
+    "open_enterprise_store",
     "Organization",
     "OrganizationId",
     "PersonaId",
@@ -77,7 +85,9 @@ __all__ = [
     "PolicyRequest",
     "Population",
     "PopulationId",
+    "create_tenant_with_default_org",
     "ScenarioId",
+    "SqliteEnterpriseStore",
     "TaskId",
     "Team",
     "TeamId",

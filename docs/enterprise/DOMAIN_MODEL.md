@@ -121,9 +121,14 @@ Does **not** launch Harbor jobs in Phase 0.
 
 ## Persistence
 
-Phase 0: `InMemoryEnterpriseStore` — dicts partitioned by `tenant_id`. No SQL, no Harbor DB reuse (Harbor’s Supabase client is a **registry**, not a product store).
+`EnterpriseRepository` is the contract. Two backends:
 
-Phase 1 will add repository interfaces backed by migrations without putting business rules in ORM models.
+| Backend | When |
+|---------|------|
+| `InMemoryEnterpriseStore` | Default (`MATRIX_ENTERPRISE_STORE=memory`). Tests, ephemeral `enterprise-api`. |
+| `SqliteEnterpriseStore` | `MATRIX_ENTERPRISE_STORE=sqlite`. Stdlib `sqlite3` + versioned migrations. Default file `.enterprise/store.sqlite`. |
+
+Neither backend puts business rules in an ORM. Harbor’s Supabase client remains a **registry**, not this product store. Tenant slugs are unique.
 
 ## Backwards compatibility
 

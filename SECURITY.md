@@ -28,9 +28,9 @@ If you discover a vulnerability in a deployment of this software, do not file a 
 - Append-only audit log, separable from normal telemetry
 - Never place secrets in model prompts or logs
 
-## Phase 0 code
+## Phase 0–1 code
 
-`matraix.enterprise` enforces tenant-scoped IDs and fails closed on cross-tenant repository access. It does **not** yet authenticate HTTP clients or isolate `jobs/` on disk.
+`matraix.enterprise` enforces tenant-scoped IDs and fails closed on cross-tenant repository access. `/api/v1` binds `X-Tenant-Id` and optionally `MATRIX_ENTERPRISE_API_TOKEN`. It does **not** isolate Harbor `jobs/` on disk.
 
 ## Reporting
 
