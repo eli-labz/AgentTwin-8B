@@ -588,7 +588,6 @@ class LocalSandboxWorker:
             harbor_job_name=harbor_job_name,
             artifact_ids=tuple(stored_ids),
             result=result,
-            updated_at=_utcnow(),
         )
         stored = context.store.put_execution(record)
         _publish(
