@@ -39,7 +39,6 @@ from matraix.enterprise.ids import (
     ArtifactId,
     DepartmentId,
     EntityId,
-    EventId,
     ExecutionId,
     ExperimentId,
     OrganizationId,

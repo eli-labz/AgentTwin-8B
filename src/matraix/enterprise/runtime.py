@@ -52,7 +52,6 @@ from matraix.enterprise.model_gateway import (
 )
 from matraix.enterprise.observability import record_execution_observability
 from matraix.enterprise.policy import (
-    DataClassification,
     PolicyDecision,
     PolicyRequest,
     evaluate_policy,

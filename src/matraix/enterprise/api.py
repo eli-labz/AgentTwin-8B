@@ -64,7 +64,7 @@ from matraix.enterprise.experiment_launch import (
     experiment_from_parts,
     map_experiment_to_harbor_job,
 )
-from matraix.enterprise.graph import OrgEdge, OrgNodeKind, OrgRelation
+from matraix.enterprise.graph import OrgEdge, OrgRelation
 from matraix.enterprise.errors import (
     ApprovalRequiredError,
     AuthorizationError,

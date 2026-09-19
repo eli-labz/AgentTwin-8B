@@ -22,7 +22,7 @@ from matraix.enterprise import (
     permission_for,
 )
 from matraix.enterprise.api import create_enterprise_app
-from matraix.enterprise.http_security import CSRF_COOKIE, CSRF_HEADER, SESSION_COOKIE
+from matraix.enterprise.http_security import CSRF_HEADER
 from matraix.enterprise.identity import EnterpriseUser
 from matraix.enterprise.ids import EntityKind, UserId, new_id
 from matraix.enterprise.oidc import OIDC_DEV_SECRET_ENV
