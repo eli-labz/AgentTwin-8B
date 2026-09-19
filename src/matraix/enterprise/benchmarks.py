@@ -19,6 +19,7 @@ from matraix.enterprise.experiment_launch import estimate_experiment_cost
 from matraix.enterprise.ids import EntityKind, ExperimentId, PopulationId, new_id
 from matraix.enterprise.model_gateway import ModelRequest, complete_model
 from matraix.enterprise.population_builder import (
+    GenerationBackend,
     PopulationSegment,
     build_population_declaration,
 )
@@ -103,7 +104,9 @@ def run_benchmark(
     n_tasks = max(1, int(tasks))
     backend = (store or "memory").strip().lower()
     if backend == "sqlite":
-        repository = open_enterprise_store(kind="sqlite", path=db_path or ":memory:")
+        repository = open_enterprise_store(
+            backend="sqlite", path=db_path or ":memory:"
+        )
     else:
         repository = InMemoryEnterpriseStore()
         backend = "memory"
@@ -133,6 +136,7 @@ def run_benchmark(
         organization_id=org.id,
         population_id=PopulationId(tenant.id, new_id(EntityKind.POPULATION)),
         target_size=n_personas,
+        backend=GenerationBackend.TREIVER,
         segments=(PopulationSegment(name="all", count=n_personas),),
     )
     repository.put_population(

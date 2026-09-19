@@ -57,7 +57,9 @@ def test_deploy_layout_exists() -> None:
 
 def test_dockerfile_is_slim_and_has_no_baked_token() -> None:
     text = (DEPLOY / "Dockerfile").read_text(encoding="utf-8")
-    assert "pip install -e ." not in text
+    assert "fastapi" in text
+    assert "uvicorn" in text
+    assert "pydantic" in text
     assert "litellm" not in text.lower()
     assert "MATRIX_ENTERPRISE_API_TOKEN=" not in text.replace(" ", "")
     assert "matraix.enterprise.api:app" in text

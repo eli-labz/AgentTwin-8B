@@ -1,7 +1,7 @@
 # Helm-lite reference. Apply from the repository:
 #   kubectl apply -k deploy/enterprise/k8s
 # Cloud-neutral: no EKS / GKE / AKS annotations. Provider notes live in
-# docs/enterprise/packaging.md only. secret.example.yaml is not included.
+# docs/enterprise/packaging.md only. Example secret manifests are not applied.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 namespace: agenttwin-enterprise

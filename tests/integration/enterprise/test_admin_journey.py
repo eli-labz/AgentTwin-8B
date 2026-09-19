@@ -97,7 +97,11 @@ def test_admin_journey_real_steps_and_tenant_isolation() -> None:
     bravo_audit = client.get("/api/v1/audit/export", headers=headers_b)
     assert bravo_audit.status_code == 200
     assert bravo_audit.json()["tenant_id"] == tenant_b
-    assert first_id not in str(bravo_audit.json())
+    # A Bravo 404 probe may be audited on Bravo; it must not return Alpha rows.
+    alpha_list = client.get("/api/v1/experiments", headers=headers_a).json()
+    bravo_list = client.get("/api/v1/experiments", headers=headers_b).json()
+    assert any(item["id"] == experiment_id for item in alpha_list)
+    assert bravo_list == []
 
     workers = client.get("/api/v1/workers").json()
     kinds = {item["kind"]: item for item in workers}

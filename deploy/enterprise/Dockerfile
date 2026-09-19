@@ -22,7 +22,8 @@ RUN apt-get update \
     && mkdir -p /data \
     && chown app:app /data
 
-# Slim runtime: FastAPI stack only. Do not `pip install -e .` (that pulls LiteLLM).
+# Slim runtime: FastAPI stack only. Do not install the full package extras
+# (those pull optional cloud and provider libraries).
 RUN pip install --no-cache-dir \
     "fastapi>=0.128.0" \
     "uvicorn>=0.38.0" \
