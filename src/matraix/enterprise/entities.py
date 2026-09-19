@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from enum import Enum
 from typing import Any, Mapping
 
 from matraix.enterprise.errors import EnterpriseSchemaError
@@ -31,7 +32,10 @@ __all__ = [
     "EnterpriseDimensions",
     "EnterprisePersona",
     "ExecutionBudget",
+    "EnterpriseExperiment",
     "Experiment",
+    "ExperimentGovernance",
+    "ExperimentKind",
     "Organization",
     "Population",
     "Team",
@@ -256,10 +260,105 @@ class ExecutionBudget:
         if self.max_cost is not None and float(self.max_cost) < 0:
             raise EnterpriseSchemaError("max_cost must be >= 0")
 
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "max_tokens": self.max_tokens,
+            "max_cost": self.max_cost,
+            "max_duration_seconds": self.max_duration_seconds,
+            "max_concurrency": self.max_concurrency,
+        }
+
+
+class ExperimentKind(str, Enum):
+    """Metadata only — the Harbor runtime is the same for every kind."""
+
+    BASELINE = "baseline"
+    AB = "ab"
+    COHORT = "cohort"
+    MODEL = "model"
+    PROMPT = "prompt"
+    POLICY = "policy"
+    LATENCY = "latency"
+    ACCESSIBILITY = "accessibility"
+
+
+@dataclass(frozen=True, slots=True)
+class ExperimentGovernance:
+    """Sign-off and retention metadata. Enforcement of deletion is later."""
+
+    retention_days: int | None = None
+    requires_human_validation: bool = True
+    sign_off: str | None = None
+    notes: str | None = None
+    limitations_required: bool = True
+
+    def __post_init__(self) -> None:
+        if self.retention_days is not None and int(self.retention_days) < 1:
+            raise EnterpriseSchemaError("retention_days must be >= 1")
+        if self.retention_days is not None:
+            object.__setattr__(self, "retention_days", int(self.retention_days))
+        sign_off = _optional_text(self.sign_off, field_name="sign_off")
+        notes = _optional_text(self.notes, field_name="notes")
+        object.__setattr__(self, "sign_off", sign_off)
+        object.__setattr__(self, "notes", notes)
+        object.__setattr__(
+            self, "requires_human_validation", bool(self.requires_human_validation)
+        )
+        object.__setattr__(
+            self, "limitations_required", bool(self.limitations_required)
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "retention_days": self.retention_days,
+            "requires_human_validation": self.requires_human_validation,
+            "sign_off": self.sign_off,
+            "notes": self.notes,
+            "limitations_required": self.limitations_required,
+        }
+
+
+def _parse_kind(value: ExperimentKind | str) -> ExperimentKind:
+    if isinstance(value, ExperimentKind):
+        return value
+    try:
+        return ExperimentKind(str(value).strip().lower())
+    except ValueError as exc:
+        raise EnterpriseSchemaError(
+            "experiment kind must be one of "
+            + ", ".join(item.value for item in ExperimentKind)
+        ) from exc
+
+
+def _parse_policy(value: PolicyDecision | str) -> PolicyDecision:
+    if isinstance(value, PolicyDecision):
+        return value
+    try:
+        return PolicyDecision(str(value).strip().upper())
+    except ValueError as exc:
+        raise EnterpriseSchemaError("default_policy must be a PolicyDecision") from exc
+
+
+def _parse_classification(
+    value: DataClassification | str,
+) -> DataClassification:
+    if isinstance(value, DataClassification):
+        return value
+    try:
+        return DataClassification(str(value).strip().upper())
+    except ValueError as exc:
+        raise EnterpriseSchemaError(
+            "data_classification must be a DataClassification"
+        ) from exc
+
 
 @dataclass(frozen=True, slots=True)
 class Experiment:
-    """Control-plane skeleton. Does not launch Harbor jobs in this phase."""
+    """Enterprise experiment launch record.
+
+    Maps onto existing Harbor job YAML. Does not replace ``harbor.Job`` and
+    does not start trials. Default policy is ``SANDBOX_ONLY``.
+    """
 
     id: ExperimentId
     tenant_id: TenantId
@@ -272,6 +371,16 @@ class Experiment:
     default_policy: PolicyDecision = PolicyDecision.SANDBOX_ONLY
     execution_budget: ExecutionBudget = field(default_factory=ExecutionBudget)
     variables: dict[str, str] = field(default_factory=dict)
+    kind: ExperimentKind = ExperimentKind.BASELINE
+    task_path: str | None = None
+    model_name: str | None = None
+    agent_name: str | None = None
+    metrics: tuple[str, ...] = ()
+    governance: ExperimentGovernance = field(default_factory=ExperimentGovernance)
+    sample_size: int | None = None
+    n_attempts: int = 1
+    trial_profile: str = "json_survey"
+    execution_mode: str = "auto"
 
     def __post_init__(self) -> None:
         if self.id.tenant_id != self.tenant_id:
@@ -287,9 +396,71 @@ class Experiment:
         object.__setattr__(self, "objective", _require_name(self.objective, field_name="objective"))
         if self.random_seed is not None:
             object.__setattr__(self, "random_seed", int(self.random_seed))
-        if not isinstance(self.default_policy, PolicyDecision):
-            raise EnterpriseSchemaError("default_policy must be a PolicyDecision")
-        if not isinstance(self.data_classification, DataClassification):
-            raise EnterpriseSchemaError(
-                "data_classification must be a DataClassification"
-            )
+        object.__setattr__(self, "default_policy", _parse_policy(self.default_policy))
+        object.__setattr__(
+            self, "data_classification", _parse_classification(self.data_classification)
+        )
+        object.__setattr__(self, "kind", _parse_kind(self.kind))
+        task = _optional_text(self.task_path, field_name="task_path")
+        object.__setattr__(self, "task_path", task)
+        model = _optional_text(self.model_name, field_name="model_name")
+        object.__setattr__(self, "model_name", model)
+        agent = _optional_text(self.agent_name, field_name="agent_name")
+        object.__setattr__(self, "agent_name", agent)
+        metrics = tuple(
+            str(item).strip() for item in self.metrics if str(item).strip()
+        )
+        object.__setattr__(self, "metrics", metrics)
+        if not isinstance(self.governance, ExperimentGovernance):
+            raise EnterpriseSchemaError("governance must be ExperimentGovernance")
+        if not isinstance(self.execution_budget, ExecutionBudget):
+            raise EnterpriseSchemaError("execution_budget must be ExecutionBudget")
+        if not isinstance(self.variables, dict):
+            raise EnterpriseSchemaError("variables must be an object")
+        object.__setattr__(
+            self, "variables", {str(k): str(v) for k, v in self.variables.items()}
+        )
+        if self.sample_size is not None and int(self.sample_size) < 1:
+            raise EnterpriseSchemaError("sample_size must be >= 1")
+        if self.sample_size is not None:
+            object.__setattr__(self, "sample_size", int(self.sample_size))
+        if int(self.n_attempts) < 1:
+            raise EnterpriseSchemaError("n_attempts must be >= 1")
+        object.__setattr__(self, "n_attempts", int(self.n_attempts))
+        profile = str(self.trial_profile or "json_survey").strip() or "json_survey"
+        mode = str(self.execution_mode or "auto").strip().lower() or "auto"
+        object.__setattr__(self, "trial_profile", profile)
+        object.__setattr__(self, "execution_mode", mode)
+
+    def launch_payload(self) -> dict[str, Any]:
+        return {
+            "kind": self.kind.value,
+            "task_path": self.task_path,
+            "model_name": self.model_name,
+            "agent_name": self.agent_name,
+            "metrics": list(self.metrics),
+            "governance": self.governance.to_dict(),
+            "sample_size": self.sample_size,
+            "n_attempts": self.n_attempts,
+            "trial_profile": self.trial_profile,
+            "execution_mode": self.execution_mode,
+        }
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id.value,
+            "tenant_id": self.tenant_id.value,
+            "organization_id": self.organization_id.value,
+            "hypothesis": self.hypothesis,
+            "objective": self.objective,
+            "population_ids": [item.value for item in self.population_ids],
+            "random_seed": self.random_seed,
+            "data_classification": self.data_classification.value,
+            "default_policy": self.default_policy.value,
+            "execution_budget": self.execution_budget.to_dict(),
+            "variables": dict(self.variables),
+            **self.launch_payload(),
+        }
+
+
+EnterpriseExperiment = Experiment

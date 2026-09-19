@@ -23,6 +23,7 @@ from matraix.enterprise.entities import (
     Team,
     Tenant,
 )
+from matraix.enterprise.experiment_launch import apply_launch_payload
 from matraix.enterprise.errors import (
     CrossTenantAccessError,
     EnterpriseSchemaError,
@@ -514,9 +515,10 @@ class SqliteEnterpriseStore:
                 INSERT INTO experiments(
                     tenant_id, id, organization_id, hypothesis, objective,
                     population_ids_json, random_seed, data_classification,
-                    default_policy, execution_budget_json, variables_json
+                    default_policy, execution_budget_json, variables_json,
+                    launch_json
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(tenant_id, id) DO UPDATE SET
                     organization_id = excluded.organization_id,
                     hypothesis = excluded.hypothesis,
@@ -526,7 +528,8 @@ class SqliteEnterpriseStore:
                     data_classification = excluded.data_classification,
                     default_policy = excluded.default_policy,
                     execution_budget_json = excluded.execution_budget_json,
-                    variables_json = excluded.variables_json
+                    variables_json = excluded.variables_json,
+                    launch_json = excluded.launch_json
                 """,
                 (
                     experiment.tenant_id.value,
@@ -547,6 +550,7 @@ class SqliteEnterpriseStore:
                         }
                     ),
                     _json_dumps(experiment.variables),
+                    _json_dumps(experiment.launch_payload()),
                 ),
             )
             self._conn.commit()
@@ -570,7 +574,8 @@ class SqliteEnterpriseStore:
                 PopulationId(tenant, value)
                 for value in json.loads(row["population_ids_json"])
             )
-            return Experiment(
+            launch_raw = row["launch_json"] if "launch_json" in row.keys() else None
+            base = Experiment(
                 id=ExperimentId(tenant, row["id"]),
                 tenant_id=tenant,
                 organization_id=OrganizationId(tenant, row["organization_id"]),
@@ -588,6 +593,17 @@ class SqliteEnterpriseStore:
                 ),
                 variables=json.loads(row["variables_json"]),
             )
+            payload = json.loads(launch_raw) if launch_raw else {}
+            return apply_launch_payload(base, payload)
+
+    def list_experiments(self, tenant_id: TenantId) -> list[Experiment]:
+        with self._lock:
+            self._require_known_tenant(tenant_id)
+            rows = self._conn.execute(
+                "SELECT * FROM experiments WHERE tenant_id = ? ORDER BY id",
+                (tenant_id.value,),
+            ).fetchall()
+            return [self.get_experiment(tenant_id, ExperimentId(tenant_id, row["id"])) for row in rows]
 
     def _require_organization(
         self, tenant_id: TenantId, organization_id: OrganizationId

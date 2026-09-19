@@ -130,11 +130,23 @@ Unknown keys fail validation. Overlap with catalog dimensions (e.g. `seniority`,
 
 Existing catalog IDs that already help enterprise simulations (do not rename): `role_function`, `seniority`, `company_size`, `risk_tolerance`, `accessibility_needs`, `trust_level`, `time_pressure`, `tech_savviness`. Catalog does **not** currently define `department`, `team`, or `tenure`.
 
-### Experiment (skeleton)
+### Experiment / EnterpriseExperiment
 
-Control-plane record: `hypothesis`, `objective`, `population_ids`, `random_seed`, `data_classification`, `default_policy` (default `SANDBOX_ONLY`), `execution_budget`, `variables`.
+Control-plane **launch record** (`Experiment`, alias `EnterpriseExperiment`). Default policy is `SANDBOX_ONLY`. It does **not** replace `harbor.Job`.
 
-Does **not** launch Harbor jobs in Phase 0.
+| Field | Meaning |
+|-------|---------|
+| `hypothesis` / `objective` | Why the run exists |
+| `population_ids` | Tenant-owned populations |
+| `random_seed` | Re-run pin (copied onto the Harbor sidecar) |
+| `kind` | `baseline`, `ab`, `cohort`, `model`, `prompt`, `policy`, `latency`, `accessibility` (metadata) |
+| `task_path` / `model_name` / `agent_name` | Existing Harbor task + agent names |
+| `metrics` | Declared metric ids (evaluation later) |
+| `execution_budget` | `max_tokens`, `max_cost`, `max_duration_seconds`, `max_concurrency` |
+| `governance` | `retention_days`, `requires_human_validation` (default true), `sign_off`, `notes` |
+| `sample_size` / `n_attempts` | Trial shape for estimates and mapping |
+
+`map_experiment_to_harbor_job` emits a Harbor job **document** (`job_name`, `agents`, `tasks`, `environment`) plus sidecar metadata (`experiment_id`, `tenant_id`, `seed`, policy). Same seed → same sidecar. `estimate_experiment_cost` is pre-run only.
 
 ### Policy
 

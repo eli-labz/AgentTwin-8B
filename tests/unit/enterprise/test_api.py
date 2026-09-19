@@ -34,6 +34,9 @@ def test_openapi_exposes_v1_paths() -> None:
     assert "/api/v1/personas" in paths
     assert "/api/v1/org-edges" in paths
     assert "/api/v1/population-declarations" in paths
+    assert "/api/v1/experiments" in paths
+    assert "/api/v1/experiments/{experiment_id}/estimate" in paths
+    assert "/api/v1/experiments/{experiment_id}/harbor-job" in paths
     assert spec["info"]["title"] == "AgentTwin Enterprise API"
 
 
@@ -269,6 +272,73 @@ def test_org_edge_and_declaration_are_tenant_isolated() -> None:
         headers={"X-Tenant-Id": bravo["id"]},
     )
     assert other.status_code == 404
+
+
+def test_experiment_create_estimate_and_harbor_job() -> None:
+    client = _client()
+    tenant = client.post("/api/v1/tenants", json={"name": "Acme", "slug": "acme"}).json()
+    headers = {"X-Tenant-Id": tenant["id"]}
+    created = client.post(
+        "/api/v1/experiments",
+        json={
+            "hypothesis": "Novice users retry more often",
+            "objective": "Measure retry rate",
+            "random_seed": 42,
+            "kind": "ab",
+            "task_path": "application/tasks/example-survey_product-feedback",
+            "sample_size": 4,
+            "metrics": ["retry_rate"],
+            "execution_budget": {"max_cost": 5.0, "max_concurrency": 2},
+            "governance": {"retention_days": 14, "sign_off": "lead"},
+        },
+        headers=headers,
+    )
+    assert created.status_code == 200
+    body = created.json()
+    assert body["default_policy"] == "SANDBOX_ONLY"
+    assert body["kind"] == "ab"
+    assert body["random_seed"] == 42
+    assert body["governance"]["sign_off"] == "lead"
+
+    estimate = client.post(
+        f"/api/v1/experiments/{body['id']}/estimate", headers=headers
+    )
+    assert estimate.status_code == 200
+    assert estimate.json()["within_budget"] is True
+    assert estimate.json()["decision"] == "SANDBOX_ONLY"
+    assert estimate.json()["trial_count"] == 4
+
+    mapped = client.get(
+        f"/api/v1/experiments/{body['id']}/harbor-job", headers=headers
+    )
+    assert mapped.status_code == 200
+    payload = mapped.json()
+    assert payload["sidecar"]["seed"] == 42
+    assert payload["sidecar"]["experiment_id"] == body["id"]
+    assert payload["harbor_job"]["tasks"][0]["path"].endswith(
+        "example-survey_product-feedback"
+    )
+    assert payload["harbor_job"]["job_name"].startswith("enterprise-")
+
+
+def test_experiment_list_is_tenant_isolated() -> None:
+    client = _client()
+    alpha = client.post("/api/v1/tenants", json={"name": "Alpha", "slug": "alpha"}).json()
+    bravo = client.post("/api/v1/tenants", json={"name": "Bravo", "slug": "bravo"}).json()
+    created = client.post(
+        "/api/v1/experiments",
+        json={"hypothesis": "H", "objective": "O"},
+        headers={"X-Tenant-Id": alpha["id"]},
+    ).json()
+    assert (
+        client.get("/api/v1/experiments", headers={"X-Tenant-Id": bravo["id"]}).json()
+        == []
+    )
+    missing = client.get(
+        f"/api/v1/experiments/{created['id']}",
+        headers={"X-Tenant-Id": bravo["id"]},
+    )
+    assert missing.status_code == 404
 
 
 def test_invalid_persona_schema_is_400() -> None:

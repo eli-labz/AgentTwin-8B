@@ -98,6 +98,8 @@ class EnterpriseRepository(Protocol):
         self, tenant_id: TenantId, experiment_id: ExperimentId
     ) -> Experiment: ...
 
+    def list_experiments(self, tenant_id: TenantId) -> list[Experiment]: ...
+
     def put_org_edge(self, edge: OrgEdge) -> OrgEdge: ...
 
     def get_org_edge(self, tenant_id: TenantId, edge_id: OrgEdgeId) -> OrgEdge: ...
@@ -305,6 +307,9 @@ class InMemoryEnterpriseStore:
             raise EntityNotFoundError(
                 f"unknown experiment {experiment_id.value}"
             ) from exc
+
+    def list_experiments(self, tenant_id: TenantId) -> list[Experiment]:
+        return list(self._bucket(tenant_id).experiments.values())
 
     def put_org_edge(self, edge: OrgEdge) -> OrgEdge:
         bucket = self._bucket(edge.tenant_id)

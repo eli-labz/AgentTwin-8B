@@ -23,7 +23,7 @@ Each phase must leave the repository **runnable**: `matraix smoke`, existing Har
 
 **Exit:** create tenant → default org → population → wrap existing YAML persona via API or repository.
 
-## Phase 2 — Enterprise personas, org graph, populations *(this change)*
+## Phase 2 — Enterprise personas, org graph, populations *(accepted)*
 
 - Organizational graph edges persisted on `EnterpriseRepository` / SQLite (in-memory fallback)
 - Population builder declares counts/segments/constraints and names Treiver / Full-DAG / 1M backends — does not rewrite `persona/synthesis`
@@ -33,14 +33,15 @@ Each phase must leave the repository **runnable**: `matraix smoke`, existing Har
 
 **Exit:** a 10k-employee-shaped population can be declared and validated without rewriting `persona/synthesis`.
 
-## Phase 3 — Experiment control plane
+## Phase 3 — Experiment control plane *(this change)*
 
-- `EnterpriseExperiment` launch record: hypothesis, populations, tasks, models, seed, metrics, governance, retention, `ExecutionBudget`
-- Map experiment → existing Harbor job YAML (generate, do not replace `Job`)
-- A/B, cohort, model, prompt, policy, latency, accessibility experiment kinds as **metadata**, same runtime
-- Estimate cost before run (extend `MATRIX_MAX_COST_USD` beyond host survey/chat)
+- `EnterpriseExperiment` (`Experiment`) launch record: hypothesis, populations, task, model, seed, metrics, governance, retention, `ExecutionBudget`
+- Map experiment → existing Harbor job YAML document (`map_experiment_to_harbor_job`) — does **not** replace `harbor.Job`
+- Experiment kinds (`ab`, `cohort`, `model`, `prompt`, `policy`, `latency`, `accessibility`) are metadata; same runtime
+- Pre-run cost estimate (`estimate_experiment_cost`) using overridable token/USD rates; gates against budget and optional `MATRIX_MAX_COST_USD` without changing `matraix run` defaults
+- `/api/v1/experiments`, `/estimate`, `/harbor-job`; SQLite `launch_json` migration; in-memory fallback
 
-**Exit:** one experiment id produces a Harbor job and can be re-run with the same seed metadata.
+**Exit:** one experiment id produces a Harbor job document and can be re-run with the same seed metadata.
 
 ## Phase 4 — Model gateway and policy gateway
 
@@ -118,4 +119,4 @@ Each phase must leave the repository **runnable**: `matraix smoke`, existing Har
 
 ## Next implementation target (after this PR)
 
-**Phase 3:** experiment control plane — `EnterpriseExperiment` launch record mapped onto existing Harbor job YAML (do not replace `Job`), seed/budget/governance metadata, cost estimate before run.
+**Phase 4:** model gateway and policy gateway beside LiteLLM — `ModelProvider` / `ModelRequest` / `ModelResponse` / `ModelPolicy`, capability/allow-list/residency routing, every execution through policy (`SANDBOX_ONLY` default).

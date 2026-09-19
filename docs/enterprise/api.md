@@ -55,6 +55,11 @@ Equivalent: `uvicorn matraix.enterprise.api:app --port 8090`.
 | `POST` | `/api/v1/population-declarations` | required | Create population + validate shape |
 | `PUT` | `/api/v1/populations/{id}/declaration` | required | Attach/replace a shape on a population |
 | `GET` | `/api/v1/populations/{id}/declaration` | required | Read the validated shape |
+| `POST` | `/api/v1/experiments` | required | Create a launch record (default `SANDBOX_ONLY`) |
+| `GET` | `/api/v1/experiments` | required | List experiments for the tenant |
+| `GET` | `/api/v1/experiments/{id}` | required | Get one experiment |
+| `POST` | `/api/v1/experiments/{id}/estimate` | required | Pre-run cost estimate (does not launch) |
+| `GET` | `/api/v1/experiments/{id}/harbor-job` | required | Mapped Harbor job document + sidecar |
 
 ### Create tenant
 
@@ -121,6 +126,28 @@ Relations: `reports_to`, `member_of`, `collaborates_with`, `depends_on`,
 `backend` is one of `treiver`, `full_dag`, `coreset_1m`. The API validates
 and stores the shape (`resolved_counts` sum to `target_size`). It does not
 run `persona/synthesis`. Privacy default: `aggregate_stats_then_synthetic`.
+
+### Experiment launch record
+
+```json
+{
+  "hypothesis": "Novice users retry more often",
+  "objective": "Measure retry rate",
+  "random_seed": 42,
+  "kind": "ab",
+  "task_path": "application/tasks/example-survey_product-feedback",
+  "sample_size": 4,
+  "metrics": ["retry_rate"],
+  "execution_budget": { "max_cost": 5.0, "max_concurrency": 2 },
+  "governance": { "retention_days": 14, "sign_off": "lead" }
+}
+```
+
+`POST .../estimate` returns trial count, estimated tokens/USD, and
+`SANDBOX_ONLY` or `DENY_BUDGET`. `GET .../harbor-job` returns `{harbor_job, sidecar}`
+— a YAML-shaped document, not a `harbor.Job` instance. `matraix run` defaults
+are unchanged. Rates: `MATRIX_ENTERPRISE_USD_PER_1K_TOKENS` (default 0.003)
+and `MATRIX_ENTERPRISE_TOKENS_PER_TRIAL` (default 4000).
 
 ## Persistence
 

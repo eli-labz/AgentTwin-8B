@@ -1,4 +1,4 @@
-"""AgentTwin Enterprise domain model (Phase 0–2).
+"""AgentTwin Enterprise domain model (Phase 0–3).
 
 This package is additive. It does not replace Harbor jobs, Playground, or the
 existing 1,290-dimension persona YAML schema. Enterprise fields are optional
@@ -6,7 +6,8 @@ simulation parameters — not a claim of psychological equivalence to humans.
 
 Public surface: typed IDs, core entities, policy enums, tenant-bound
 repositories (in-memory default, SQLite optional), ``/api/v1``, org-graph
-edges, and a population-shape builder that names existing generation backends.
+edges, a population-shape builder, and experiment launch records mapped onto
+Harbor job YAML (not a replacement for ``harbor.Job``).
 """
 
 from matraix.enterprise.entities import (
@@ -15,7 +16,10 @@ from matraix.enterprise.entities import (
     EnterpriseDimensions,
     EnterprisePersona,
     ExecutionBudget,
+    EnterpriseExperiment,
     Experiment,
+    ExperimentGovernance,
+    ExperimentKind,
     Organization,
     Population,
     Team,
@@ -47,6 +51,11 @@ from matraix.enterprise.ids import (
     UserId,
     new_id,
 )
+from matraix.enterprise.experiment_launch import (
+    CostEstimate,
+    estimate_experiment_cost,
+    map_experiment_to_harbor_job,
+)
 from matraix.enterprise.population_builder import (
     GenerationBackend,
     PopulationDeclaration,
@@ -71,19 +80,25 @@ __all__ = [
     "DataClassification",
     "Department",
     "DepartmentId",
+    "CostEstimate",
     "EnterpriseDimensions",
+    "EnterpriseExperiment",
     "EnterprisePersona",
     "EnterpriseSchemaError",
     "EnterpriseRepository",
     "EnterpriseStore",
     "EntityId",
     "EntityNotFoundError",
+    "estimate_experiment_cost",
     "ExecutionBudget",
     "ExecutionId",
     "Experiment",
+    "ExperimentGovernance",
     "ExperimentId",
+    "ExperimentKind",
     "GenerationBackend",
     "InMemoryEnterpriseStore",
+    "map_experiment_to_harbor_job",
     "ModelId",
     "ObservationId",
     "open_enterprise_store",

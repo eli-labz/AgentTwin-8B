@@ -144,6 +144,12 @@ SCHEMA_MIGRATIONS: tuple[tuple[int, str], ...] = (
             ON population_declarations(tenant_id);
         """,
     ),
+    (
+        3,
+        """
+        ALTER TABLE experiments ADD COLUMN launch_json TEXT;
+        """,
+    ),
 )
 
 

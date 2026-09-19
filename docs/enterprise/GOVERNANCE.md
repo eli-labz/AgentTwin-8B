@@ -67,4 +67,4 @@ Before exposing an experiment to external models or production-like tools, revie
 - Cost and concurrency limits
 - Whether any cohort is an adversarial/red-team **simulation category** (not a diagnosis)
 
-Sign-off belongs on the experiment record (Phase 3/9), not in a slide deck alone.
+Sign-off belongs on the experiment record (`ExperimentGovernance.sign_off`). Phase 3 stores it; Phase 9 hardens IAM around who may set it.

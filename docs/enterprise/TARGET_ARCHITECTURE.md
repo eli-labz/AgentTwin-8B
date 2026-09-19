@@ -1,6 +1,6 @@
 # Target Architecture — AgentTwin Enterprise
 
-This is the target modular platform. Phase 0 shipped **contracts and a tenant-scoped domain model**. Phase 1 added **persistence + `/api/v1`**. Phase 2 adds **org-graph edges and a population-shape builder**. Harbor, Playground, and the 1,290-dimension persona stack remain the simulation engines.
+This is the target modular platform. Phase 0 shipped **contracts and a tenant-scoped domain model**. Phase 1 added **persistence + `/api/v1`**. Phase 2 added **org-graph edges and a population-shape builder**. Phase 3 adds **experiment launch records** mapped onto Harbor job YAML. Harbor, Playground, and the 1,290-dimension persona stack remain the simulation engines.
 
 ## Layered platform
 
@@ -118,7 +118,7 @@ Contracts are **interfaces**, not a rewrite. Phase 0 ships the first Python type
 4. Tenancy is enforced in the domain/store, not only in UI filters.
 5. Existing Harbor jobs remain runnable without a tenant (legacy path) until Phase 1 APIs wrap them.
 
-## Phase 0–2 slice actually implemented
+## Phase 0–3 slice actually implemented
 
 - Typed IDs and entities: `src/matraix/enterprise/`
 - `EnterpriseRepository` with in-memory (default) and SQLite backends
@@ -126,7 +126,8 @@ Contracts are **interfaces**, not a rewrite. Phase 0 ships the first Python type
 - Optional `enterprise` block on persona records
 - Optional `tenant_id` on generated job `.meta.json` sidecars
 - Org-graph edges + population-shape declarations (Treiver / Full-DAG / 1M named, not rewritten)
+- Experiment launch records + Harbor job YAML mapping + pre-run cost estimate
 - Policy enums + sandbox default
 - Tests under `tests/unit/enterprise`, `tests/multitenancy`, `tests/security`
 
-Not yet: experiment launch API, Harbor filesystem tenancy, console navigation.
+Not yet: model/policy gateway, Harbor filesystem tenancy, console navigation.

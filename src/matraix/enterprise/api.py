@@ -17,9 +17,16 @@ from pydantic import BaseModel, Field
 
 from matraix.enterprise.entities import (
     EnterprisePersona,
+    ExecutionBudget,
+    ExperimentGovernance,
     Organization,
     Population,
     Tenant,
+)
+from matraix.enterprise.experiment_launch import (
+    estimate_experiment_cost,
+    experiment_from_parts,
+    map_experiment_to_harbor_job,
 )
 from matraix.enterprise.graph import OrgEdge, OrgNodeKind, OrgRelation
 from matraix.enterprise.errors import (
@@ -29,6 +36,7 @@ from matraix.enterprise.errors import (
 )
 from matraix.enterprise.ids import (
     EntityKind,
+    ExperimentId,
     OrganizationId,
     OrgEdgeId,
     PersonaId,
@@ -156,6 +164,28 @@ class PopulationDeclarationIn(BaseModel):
         description="When creating a population with the declaration, the population name.",
     )
     description: str | None = None
+
+
+class ExperimentCreate(BaseModel):
+    hypothesis: str
+    objective: str
+    population_ids: list[str] = Field(default_factory=list)
+    random_seed: int | None = 42
+    kind: str = "baseline"
+    task_path: str | None = None
+    model_name: str | None = None
+    agent_name: str | None = None
+    metrics: list[str] = Field(default_factory=list)
+    sample_size: int | None = None
+    n_attempts: int = 1
+    trial_profile: str = "json_survey"
+    execution_mode: str = "auto"
+    data_classification: str = "INTERNAL"
+    default_policy: str = "SANDBOX_ONLY"
+    organization_id: str | None = None
+    variables: dict[str, str] = Field(default_factory=dict)
+    execution_budget: dict[str, Any] = Field(default_factory=dict)
+    governance: dict[str, Any] = Field(default_factory=dict)
 
 
 def _configured_token() -> str | None:
@@ -299,6 +329,10 @@ def create_enterprise_app(
             },
             {"name": "org-edges", "description": "Organizational graph relationships"},
             {"name": "personas", "description": "Wrappers around existing YAML records"},
+            {
+                "name": "experiments",
+                "description": "Launch records mapped onto Harbor job YAML (does not replace Job)",
+            },
         ],
     )
     app.state.store = repository
@@ -584,6 +618,121 @@ def create_enterprise_app(
             tenant, PopulationId(tenant, population_id)
         )
         return declaration.to_dict()
+
+    def _budget_from_payload(raw: dict[str, Any]) -> ExecutionBudget:
+        return ExecutionBudget(
+            max_tokens=raw.get("max_tokens"),
+            max_cost=raw.get("max_cost"),
+            max_duration_seconds=raw.get("max_duration_seconds"),
+            max_concurrency=raw.get("max_concurrency"),
+        )
+
+    def _governance_from_payload(raw: dict[str, Any]) -> ExperimentGovernance:
+        return ExperimentGovernance(
+            retention_days=raw.get("retention_days"),
+            requires_human_validation=raw.get("requires_human_validation", True),
+            sign_off=raw.get("sign_off"),
+            notes=raw.get("notes"),
+            limitations_required=raw.get("limitations_required", True),
+        )
+
+    def _population_target(tenant, population_ids) -> int | None:
+        if not population_ids:
+            return None
+        try:
+            pop = _store().get_population(tenant, population_ids[0])
+        except EntityNotFoundError:
+            return None
+        return pop.target_size
+
+    def _persona_paths(tenant, population_ids) -> list[str]:
+        paths: list[str] = []
+        wanted = {item.value for item in population_ids}
+        for persona in _store().list_personas(tenant):
+            if persona.population_id and persona.population_id.value in wanted:
+                paths.append(f"legacy:{persona.legacy_persona_id}")
+        return paths
+
+    @app.post("/api/v1/experiments", tags=["experiments"])
+    def create_experiment(
+        payload: ExperimentCreate,
+        x_tenant_id: Annotated[str | None, Header(alias=TENANT_HEADER)] = None,
+    ) -> dict[str, Any]:
+        tenant = _require_tenant_header(x_tenant_id)
+        organization_id = _resolve_organization_id(
+            _store(), tenant, payload.organization_id
+        )
+        population_ids = tuple(
+            PopulationId(tenant, item) for item in payload.population_ids
+        )
+        experiment = experiment_from_parts(
+            tenant_id=tenant,
+            organization_id=organization_id,
+            hypothesis=payload.hypothesis,
+            objective=payload.objective,
+            population_ids=population_ids,
+            random_seed=payload.random_seed,
+            data_classification=payload.data_classification,
+            default_policy=payload.default_policy,
+            execution_budget=_budget_from_payload(payload.execution_budget),
+            variables=payload.variables,
+            kind=payload.kind,
+            task_path=payload.task_path,
+            model_name=payload.model_name,
+            agent_name=payload.agent_name,
+            metrics=payload.metrics,
+            governance=_governance_from_payload(payload.governance),
+            sample_size=payload.sample_size,
+            n_attempts=payload.n_attempts,
+            trial_profile=payload.trial_profile,
+            execution_mode=payload.execution_mode,
+        )
+        return _store().put_experiment(experiment).to_dict()
+
+    @app.get("/api/v1/experiments", tags=["experiments"])
+    def list_experiments(
+        x_tenant_id: Annotated[str | None, Header(alias=TENANT_HEADER)] = None,
+    ) -> list[dict[str, Any]]:
+        tenant = _require_tenant_header(x_tenant_id)
+        return [item.to_dict() for item in _store().list_experiments(tenant)]
+
+    @app.get("/api/v1/experiments/{experiment_id}", tags=["experiments"])
+    def get_experiment(
+        experiment_id: str,
+        x_tenant_id: Annotated[str | None, Header(alias=TENANT_HEADER)] = None,
+    ) -> dict[str, Any]:
+        tenant = _require_tenant_header(x_tenant_id)
+        return _store().get_experiment(
+            tenant, ExperimentId(tenant, experiment_id)
+        ).to_dict()
+
+    @app.post("/api/v1/experiments/{experiment_id}/estimate", tags=["experiments"])
+    def estimate_experiment(
+        experiment_id: str,
+        x_tenant_id: Annotated[str | None, Header(alias=TENANT_HEADER)] = None,
+    ) -> dict[str, Any]:
+        tenant = _require_tenant_header(x_tenant_id)
+        experiment = _store().get_experiment(
+            tenant, ExperimentId(tenant, experiment_id)
+        )
+        return estimate_experiment_cost(
+            experiment,
+            population_target=_population_target(tenant, experiment.population_ids),
+        ).to_dict()
+
+    @app.get("/api/v1/experiments/{experiment_id}/harbor-job", tags=["experiments"])
+    def experiment_harbor_job(
+        experiment_id: str,
+        x_tenant_id: Annotated[str | None, Header(alias=TENANT_HEADER)] = None,
+    ) -> dict[str, Any]:
+        tenant = _require_tenant_header(x_tenant_id)
+        experiment = _store().get_experiment(
+            tenant, ExperimentId(tenant, experiment_id)
+        )
+        return map_experiment_to_harbor_job(
+            experiment,
+            persona_paths=_persona_paths(tenant, experiment.population_ids),
+        )
 
     return app
 
