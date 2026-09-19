@@ -157,6 +157,7 @@ harbor = [
 ]
 matraix = [
     "agents/persona/templates/*.j2",
+    "enterprise/console.html",
 ]
 
 [tool.pytest.ini_options]

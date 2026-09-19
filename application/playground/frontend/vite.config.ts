@@ -17,6 +17,8 @@ import react from "@vitejs/plugin-react";
  *   when it exists, serving the built SPA from the same origin in production.
  */
 const API_TARGET = process.env.VITE_API_TARGET ?? "http://localhost:8765";
+const ENTERPRISE_API_TARGET =
+  process.env.VITE_ENTERPRISE_API_TARGET ?? "http://127.0.0.1:8090";
 
 export default defineConfig({
   plugins: [react()],
@@ -32,6 +34,11 @@ export default defineConfig({
       "/api": {
         target: API_TARGET,
         changeOrigin: true,
+      },
+      "/enterprise-api": {
+        target: ENTERPRISE_API_TARGET,
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/enterprise-api/, ""),
       },
     },
   },

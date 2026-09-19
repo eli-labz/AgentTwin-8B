@@ -18,6 +18,10 @@ export interface UrlState {
   cockpitTrial: string | null;
   /** Active batch Harbor job in the cockpit. */
   cockpitBatch: string | null;
+  /** Enterprise console section (overview, evaluations, …). */
+  entPage: string | null;
+  /** Selected enterprise execution for artifact views. */
+  entExec: string | null;
 }
 
 const KEYS = [
@@ -33,6 +37,8 @@ const KEYS = [
   "cockpitJob",
   "cockpitTrial",
   "cockpitBatch",
+  "entPage",
+  "entExec",
 ] as const;
 const STORAGE_KEY = "playground.urlState";
 /** Cockpit run pointers should not resurrect from storage unless the URL names them. */

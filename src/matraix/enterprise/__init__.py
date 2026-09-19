@@ -1,4 +1,4 @@
-"""AgentTwin Enterprise domain model (Phase 0–6).
+"""AgentTwin Enterprise domain model (Phase 0–7).
 
 This package is additive. It does not replace Harbor jobs, Playground, or the
 existing 1,290-dimension persona YAML schema. Enterprise fields are optional
@@ -9,8 +9,9 @@ repositories (in-memory default, SQLite optional), ``/api/v1``, org-graph
 edges, a population-shape builder, experiment launch records mapped onto
 Harbor job YAML (not a replacement for ``harbor.Job``), a
 provider-independent model gateway beside LiteLLM, control / data /
-execution planes with a local sandbox worker, and telemetry / evaluation
-(synthetic outputs are not human research).
+execution planes with a local sandbox worker, telemetry / evaluation
+(synthetic outputs are not human research), and a Playground-hosted
+enterprise console (nav + experiment wizard + artifact views).
 """
 
 from matraix.enterprise.entities import (
@@ -134,6 +135,7 @@ from matraix.enterprise.metrics import (
     MetricsRegistry,
     SYNTHETIC_METRIC_LIMITATION,
 )
+from matraix.enterprise.console import CONSOLE_NAV, WIZARD_STEPS, console_manifest
 from matraix.enterprise.observability import record_execution_observability
 from matraix.enterprise.telemetry import (
     FAILURE_CLASSES,
@@ -241,6 +243,8 @@ __all__ = [
     "build_population_declaration",
     "catalog_for_policy",
     "complete_model",
+    "CONSOLE_NAV",
+    "console_manifest",
     "create_tenant_with_default_org",
     "default_model_policy",
     "default_simulation_decision",
@@ -256,6 +260,7 @@ __all__ = [
     "TenantId",
     "UserId",
     "worker_catalog",
+    "WIZARD_STEPS",
     "WorkerKind",
     "WorkerNotAvailableError",
     "WorkRequest",

@@ -2,6 +2,7 @@
  * TopBar: MatrAIx application header.
  *
  * Nav (centered pill): Persona World · Task Gallery · Home · Playground · Runs.
+ * Enterprise console is a separate mode (right-side control), not a sixth pill.
  * Equal-width slots keep Home visually centered despite uneven label lengths.
  */
 import { PreflightChip } from "./PreflightChip";
@@ -11,7 +12,7 @@ import { MatrAIxLogo } from "./studio/MatrAIxLogo";
 import { useTheme } from "@/hooks/useTheme";
 import { useI18n } from "@/i18n/I18nProvider";
 
-export type StudioMode = "home" | "playground";
+export type StudioMode = "home" | "playground" | "enterprise";
 
 export interface TopBarProps {
   mode: StudioMode;
@@ -23,6 +24,8 @@ export interface TopBarProps {
   onOpenRuns: () => void;
   onOpenTaskGallery: () => void;
   onOpenPersonaStore: () => void;
+  enterpriseActive?: boolean;
+  onOpenEnterprise?: () => void;
   /** "glass" floats over the Home stage as a NASA-panel frosted bar. */
   variant?: "solid" | "glass";
 }
@@ -37,6 +40,8 @@ export function TopBar({
   onOpenRuns,
   onOpenTaskGallery,
   onOpenPersonaStore,
+  enterpriseActive = false,
+  onOpenEnterprise,
   variant = "solid",
 }: TopBarProps) {
   const { theme, toggle } = useTheme();
@@ -120,6 +125,20 @@ export function TopBar({
         </nav>
 
         <div className="flex flex-shrink-0 items-center justify-end gap-2.5">
+          {onOpenEnterprise && (
+            <button
+              type="button"
+              onClick={onOpenEnterprise}
+              aria-current={enterpriseActive ? "page" : undefined}
+              className={`nasa-glass-pill hidden h-9 items-center rounded-full px-3 text-[13px] font-semibold sm:flex ${FOCUS_RING} ${
+                enterpriseActive
+                  ? "bg-primary text-on-primary"
+                  : "text-text-variant hover:bg-surface-high/40 hover:text-text-main"
+              }`}
+            >
+              {t("shell.nav.enterprise")}
+            </button>
+          )}
           <PreflightChip />
 
           <LocalePopover />

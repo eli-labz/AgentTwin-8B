@@ -51,6 +51,7 @@ def test_openapi_exposes_v1_paths() -> None:
     assert "/api/v1/executions/{execution_id}/evaluation" in paths
     assert "/api/v1/executions/{execution_id}/evaluate" in paths
     assert "/api/v1/failures" in paths
+    assert "/api/v1/console/manifest" in paths
     assert spec["info"]["title"] == "AgentTwin Enterprise API"
 
 

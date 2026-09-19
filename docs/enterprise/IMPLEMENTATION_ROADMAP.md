@@ -65,7 +65,7 @@ Each phase must leave the repository **runnable**: `matraix smoke`, existing Har
 
 **Exit:** same experiment runs local or remote without changing domain types.
 
-## Phase 6 — Telemetry, metrics, evaluation *(this change)*
+## Phase 6 — Telemetry, metrics, evaluation *(accepted)*
 
 - OpenTelemetry-compatible traces (`trace_id`, `tenant_id`, experiment/persona/task, tokens, cost, policy events) — no OTel SDK import ([telemetry.md](telemetry.md))
 - Hierarchical metrics SDK (step → enterprise) with intervals, segmentation, provenance
@@ -76,11 +76,13 @@ Each phase must leave the repository **runnable**: `matraix smoke`, existing Har
 
 **Exit:** a result traces to execution, persona, model, seed, code version.
 
-## Phase 7 — Enterprise console
+## Phase 7 — Enterprise console *(this change)*
 
-- Evolve Playground navigation: Overview, Organizations, Populations, Personas, Experiments, Tasks, Environments, Models, Evaluations, Analytics, Governance, Audit, Infrastructure, Settings
-- Experiment wizard (population → launch)
-- Authenticate the API; close open CORS for non-dev
+- Evolve Playground with an Enterprise mode: Overview, Organizations, Populations, Personas, Experiments, Tasks, Environments, Models, Evaluations, Analytics, Governance, Audit, Infrastructure, Settings ([console.md](console.md))
+- Experiment wizard: Population → Scenario → Task → Environment → AI System → Metrics → Governance → Scale → Cost → Launch
+- Authenticate `/api/v1` (Bearer + `MATRIX_ENTERPRISE_REQUIRE_AUTH` / production); close CORS for non-dev
+- Consume Phase 6 artifacts; surface synthetic ≠ human research in UI copy
+- `/console` served by `matraix enterprise-api`; stubs for unfinished deep pages
 
 **Exit:** an admin can drive Phase 1–3 flows without YAML-first.
 
@@ -123,4 +125,4 @@ Each phase must leave the repository **runnable**: `matraix smoke`, existing Har
 
 ## Next implementation target (after this PR)
 
-**Phase 7:** enterprise console — evolve Playground navigation (Overview, Organizations, Populations, Personas, Experiments, Tasks, Environments, Models, Evaluations, Analytics, Governance, Audit, Infrastructure, Settings); experiment wizard (population → launch); authenticate the API and close open CORS for non-dev. Consume Phase 6 trace / metrics / evaluation artifacts; do not present synthetic outputs as human research.
+**Phase 8:** reporting and executive analytics — success / risk / subgroup / cost / confidence dashboard with drill-down; report generator (limitations + recommended human validation required); export JSON / CSV / HTML / PDF-ready HTML. Extend `matraix results` and Playground PDF. Never present synthetic outputs as human research.

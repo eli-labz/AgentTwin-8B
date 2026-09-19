@@ -1,6 +1,6 @@
 # Enterprise API (`/api/v1`)
 
-Phase 1–6 control-plane skeleton. This is **not** the Playground API
+Phase 1–7 control-plane skeleton. This is **not** the Playground API
 (`docs/application/playground-api.md`). Harbor jobs and `matraix run` stay
 unchanged.
 
@@ -28,9 +28,13 @@ Equivalent: `uvicorn matraix.enterprise.api:app --port 8090`.
 - Tenant-scoped routes require `X-Tenant-Id`.
 - Cross-tenant access is `403`. Missing records inside the tenant are `404`.
 - Invalid schema is `400`.
-- When `MATRIX_ENTERPRISE_API_TOKEN` is unset, the API is open (local/dev).
-  When set, every `/api/v1` call needs `Authorization: Bearer <token>`.
-  `/docs` and `/openapi.json` stay reachable so operators can read the contract.
+- When `MATRIX_ENTERPRISE_API_TOKEN` is unset, the API is open (local/dev)
+  unless `MATRIX_ENTERPRISE_REQUIRE_AUTH=1` or
+  `MATRIX_ENTERPRISE_ENV=production`. When a token is required, `/api/v1`
+  calls need `Authorization: Bearer <token>`. `/docs`, `/openapi.json`,
+  `/health`, and `/console` stay reachable.
+- CORS: Vite/Playground origins in dev. Production is closed unless
+  `MATRIX_ENTERPRISE_CORS_ORIGINS` is set. See [console.md](console.md).
 - Creating a tenant also creates a default organization (same name) so
   populations and personas can be created immediately.
 
@@ -78,6 +82,8 @@ Equivalent: `uvicorn matraix.enterprise.api:app --port 8090`.
 | `GET` | `/api/v1/executions/{id}/evaluation` | required | Stored evaluation bundle |
 | `POST` | `/api/v1/executions/{id}/evaluate` | required | Re-run evaluation SDK (LLM judge optional / supplemental) |
 | `GET` | `/api/v1/failures` | required | Failure taxonomy artifacts; optional `?execution_id=` |
+| `GET` | `/api/v1/console/manifest` | no | Nav, wizard steps, synthetic≠human limitation |
+| `GET` | `/console` | no | Standalone console HTML |
 
 ### Create tenant
 

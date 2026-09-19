@@ -8,12 +8,21 @@ enforced by ``X-Tenant-Id`` plus the repository contract. When
 
 from __future__ import annotations
 
-import os
+from pathlib import Path
 from typing import Annotated, Any
 
 from fastapi import FastAPI, Header, HTTPException, Query, Request
-from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
+
+from matraix.enterprise.console import console_manifest
+from matraix.enterprise.http_security import (
+    auth_is_required,
+    configured_token,
+    is_public_path,
+    resolve_cors_origins,
+)
 
 from matraix.enterprise.entities import (
     EnterprisePersona,
@@ -74,8 +83,8 @@ from matraix.enterprise.store import (
     open_enterprise_store,
 )
 
-API_TOKEN_ENV = "MATRIX_ENTERPRISE_API_TOKEN"
 TENANT_HEADER = "X-Tenant-Id"
+_CONSOLE_HTML = Path(__file__).with_name("console.html")
 
 
 class TenantCreate(BaseModel):
@@ -260,15 +269,17 @@ class EvaluationSubmitIn(BaseModel):
     include_llm_judge: bool = False
 
 
-def _configured_token() -> str | None:
-    token = os.environ.get(API_TOKEN_ENV, "").strip()
-    return token or None
-
-
 def _require_token(request: Request) -> None:
-    expected = _configured_token()
-    if expected is None:
+    if is_public_path(request.url.path):
         return
+    if not auth_is_required():
+        return
+    expected = configured_token()
+    if expected is None:
+        raise HTTPException(
+            status_code=401,
+            detail="API token is required but MATRIX_ENTERPRISE_API_TOKEN is unset",
+        )
     header = request.headers.get("authorization") or ""
     prefix = "bearer "
     got = header[len(prefix) :].strip() if header.lower().startswith(prefix) else ""
@@ -421,6 +432,10 @@ def create_enterprise_app(
                 "name": "telemetry",
                 "description": "Traces, hierarchical metrics, evaluation (synthetic ≠ human research)",
             },
+            {
+                "name": "console",
+                "description": "Enterprise console manifest (nav + wizard; synthetic ≠ human research)",
+            },
         ],
     )
     app.state.store = repository
@@ -469,7 +484,7 @@ def create_enterprise_app(
 
     @app.middleware("http")
     async def _auth_middleware(request: Request, call_next):
-        if request.url.path in {"/docs", "/redoc", "/openapi.json"}:
+        if request.method == "OPTIONS" or is_public_path(request.url.path):
             return await call_next(request)
         try:
             _require_token(request)
@@ -478,6 +493,16 @@ def create_enterprise_app(
                 status_code=exc.status_code, content={"detail": exc.detail}
             )
         return await call_next(request)
+
+    cors_origins = resolve_cors_origins()
+    if cors_origins:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=cors_origins,
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
 
     def _store() -> EnterpriseRepository:
         return app.state.store
@@ -488,6 +513,15 @@ def create_enterprise_app(
     @app.get("/health", include_in_schema=False)
     def health() -> dict[str, str]:
         return {"status": "ok"}
+
+    @app.get("/console", include_in_schema=False)
+    @app.get("/console/", include_in_schema=False)
+    def enterprise_console() -> FileResponse:
+        return FileResponse(_CONSOLE_HTML, media_type="text/html")
+
+    @app.get("/api/v1/console/manifest", tags=["console"])
+    def get_console_manifest() -> dict[str, Any]:
+        return console_manifest()
 
     @app.post("/api/v1/tenants", response_model=TenantOut, tags=["tenants"])
     def create_tenant(payload: TenantCreate) -> TenantOut:

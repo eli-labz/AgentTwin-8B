@@ -69,10 +69,10 @@ See the [Handbook](docs/README.md) and [quickstart](docs/quickstart.md).
 
 ## Enterprise status (in progress)
 
-Phases **0–6** are on this branch as a **draft pull request**
+Phases **0–7** are on this branch as a **draft pull request**
 ([#1](https://github.com/eli-labz/AgentTwin-8B/pull/1)). They are not a
-finished production platform. Phases 7–10 (console, executive reporting,
-IAM hardening, packaging) are **not** done.
+finished production platform. Phases 8–10 (executive reporting, IAM
+hardening, packaging) are **not** done.
 
 | Phase | On this branch |
 |-------|----------------|
@@ -83,7 +83,8 @@ IAM hardening, packaging) are **not** done.
 | 4 Model + policy gateways | Yes — beside LiteLLM; `SANDBOX_ONLY` default |
 | 5 Runtime planes + local worker | Yes — remote Docker/K8s/queue/batch are **stubs** |
 | 6 Telemetry, metrics, evaluation | Yes — OTel-shaped traces; deterministic eval first |
-| 7–10 Console, reports, IAM, packaging | Not on this branch |
+| 7 Enterprise console | Yes — Playground Enterprise mode + `/console`; deep pages stubbed |
+| 8–10 Reports, IAM, packaging | Not on this branch |
 
 Python package: `matraix.enterprise`. HTTP: `/api/v1` (OpenAPI at `/docs` when
 the enterprise API is running). Default store is in-memory; set

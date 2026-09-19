@@ -10,6 +10,10 @@ is running.
 
 - JSON uses camelCase field names.
 - The API does not require authentication in local development.
+- CORS allows the Vite dev server (`localhost:5173`) when
+  `MATRIX_PLAYGROUND_ENV` is unset or `dev`. Production
+  (`MATRIX_PLAYGROUND_ENV=production`) is same-origin only unless
+  `MATRIX_PLAYGROUND_CORS_ORIGINS` is set.
 - Long-running work is launched through `POST /api/harbor/jobs`. Clients poll
   `GET /api/harbor/jobs/{job_name}` until `launch.status` is `completed` or
   `failed`.

@@ -67,5 +67,6 @@ nav:
       - Model gateway: enterprise/model-gateway.md
       - Runtime: enterprise/runtime.md
       - Telemetry: enterprise/telemetry.md
+      - Console: enterprise/console.md
   - ADR:
       - 0001 Platform boundaries: adr/0001-enterprise-platform-boundaries.md

@@ -100,7 +100,7 @@ From the master prompt — status after Phase 1:
 | Policy vocabulary + sandbox default | Yes (`evaluate_policy`) |
 | Classification enum | Yes |
 | No hard-coded secrets in new code | Yes |
-| API authorization / CSRF / rate limits | Optional Bearer token; no CSRF / rate limits yet |
+| API authorization / CSRF / rate limits | Bearer token; `REQUIRE_AUTH` / production; CORS closed in prod; no CSRF / rate limits yet |
 | Audit log | Not yet |
 | Dependency scanning in CI | Not yet |
 | Container isolation | Existing Harbor/Docker (unchanged) |

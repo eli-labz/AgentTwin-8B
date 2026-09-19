@@ -58,11 +58,24 @@ from backend.api.deps import AppState, build_state, state_from_request
 
 __all__ = ["create_app", "app", "preflight_checks", "catalog_item_view"]
 
-#: Origins allowed to call the API cross-origin (the Vite dev server).
+#: Origins allowed to call the API cross-origin in **dev** (the Vite server).
 DEV_ORIGINS: List[str] = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
 ]
+CORS_ORIGINS_ENV = "MATRIX_PLAYGROUND_CORS_ORIGINS"
+PLAYGROUND_ENV = "MATRIX_PLAYGROUND_ENV"
+
+
+def playground_cors_origins() -> List[str]:
+    """Explicit allow-list, else Vite origins in dev, else closed (same-origin)."""
+    raw = os.environ.get(CORS_ORIGINS_ENV, "").strip()
+    if raw:
+        return [item.strip() for item in raw.split(",") if item.strip()]
+    env = os.environ.get(PLAYGROUND_ENV, "dev").strip().lower() or "dev"
+    if env in {"prod", "production"}:
+        return []
+    return list(DEV_ORIGINS)
 
 
 class _NoCacheIndexMiddleware(BaseHTTPMiddleware):
@@ -607,14 +620,16 @@ def create_app(catalog_path: Optional[str] = None) -> FastAPI:
     )
     app.state.services = state
 
-    # --- CORS (Vite dev server) --------------------------------------- #
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=DEV_ORIGINS,
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
+    # --- CORS: Vite in dev; closed for production unless allow-listed -- #
+    cors_origins = playground_cors_origins()
+    if cors_origins:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=cors_origins,
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
     app.add_middleware(_NoCacheIndexMiddleware)
 
     # ----------------------------- health ----------------------------- #

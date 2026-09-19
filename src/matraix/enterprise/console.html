@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AgentTwin Enterprise Console</title>
+  <style>
+    :root { color-scheme: dark; --bg: #09090a; --panel: #151516; --line: #303034; --text: #f4f4f5; --muted: #a1a1aa; --accent: #0076c2; --warn: #fbbf24; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font: 14px/1.45 system-ui, sans-serif; background: var(--bg); color: var(--text); }
+    header { padding: 12px 20px; border-bottom: 1px solid var(--line); display: flex; gap: 16px; align-items: center; }
+    header strong { font-size: 16px; }
+    .banner { background: #3f2f0c; color: #fde68a; padding: 8px 20px; font-size: 13px; }
+    .shell { display: flex; min-height: calc(100vh - 90px); }
+    nav { width: 200px; border-right: 1px solid var(--line); padding: 12px 8px; }
+    nav button { display: block; width: 100%; text-align: left; background: none; border: 0; color: var(--muted); padding: 8px 10px; border-radius: 8px; cursor: pointer; }
+    nav button.active, nav button:hover { background: #1e1e1f; color: var(--text); }
+    main { flex: 1; padding: 20px 24px; overflow: auto; }
+    h1 { font-size: 20px; margin: 0 0 8px; }
+    .muted { color: var(--muted); }
+    label { display: block; margin: 10px 0 4px; color: var(--muted); }
+    input, textarea, select { width: 100%; max-width: 420px; background: #0b0b0c; border: 1px solid var(--line); color: var(--text); padding: 8px; border-radius: 8px; }
+    button.primary { background: var(--accent); color: #fff; border: 0; padding: 8px 14px; border-radius: 8px; cursor: pointer; margin-top: 12px; }
+    button.ghost { background: #1e1e1f; color: var(--text); border: 1px solid var(--line); padding: 6px 10px; border-radius: 8px; cursor: pointer; margin-right: 6px; }
+    pre { background: #0b0b0c; border: 1px solid var(--line); padding: 12px; overflow: auto; border-radius: 8px; }
+    .steps { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0; }
+    .steps span { padding: 4px 8px; border-radius: 999px; background: #1e1e1f; color: var(--muted); }
+    .steps span.on { background: var(--accent); color: #fff; }
+    .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin: 12px 0; }
+    .err { color: #fca5a5; }
+  </style>
+</head>
+<body>
+  <header>
+    <strong>AgentTwin Enterprise</strong>
+    <span class="muted">Console · SANDBOX_ONLY default</span>
+  </header>
+  <div class="banner" id="banner"></div>
+  <div class="shell">
+    <nav id="nav"></nav>
+    <main id="main"></main>
+  </div>
+  <script>
+    const state = {
+      page: "overview",
+      step: 0,
+      tenantId: localStorage.getItem("enterprise.tenantId") || "",
+      token: localStorage.getItem("enterprise.token") || "",
+      base: localStorage.getItem("enterprise.apiBase") || location.origin,
+      wizard: { hypothesis: "", objective: "", task_path: "application/tasks/example-survey_product-feedback", sample_size: 2, random_seed: 42 },
+      lastExecution: null,
+    };
+    let manifest = { nav: [], wizard: [], limitation: "", synthetic_equivalent_to_human_research: false };
+
+    function headers(extra) {
+      const h = Object.assign({ "Content-Type": "application/json" }, extra || {});
+      if (state.tenantId) h["X-Tenant-Id"] = state.tenantId;
+      if (state.token) h["Authorization"] = "Bearer " + state.token;
+      return h;
+    }
+    async function api(path, opts) {
+      const res = await fetch(state.base.replace(/\/$/, "") + path, Object.assign({ headers: headers() }, opts));
+      const text = await res.text();
+      let body; try { body = text ? JSON.parse(text) : null; } catch { body = text; }
+      if (!res.ok) throw new Error((body && body.detail) || res.status + " " + path);
+      return body;
+    }
+    function el(html) { const d = document.createElement("div"); d.innerHTML = html; return d; }
+
+    function renderNav() {
+      document.getElementById("nav").innerHTML = manifest.nav.map((item) =>
+        `<button data-id="${item.id}" class="${item.id === state.page ? "active" : ""}">${item.label}</button>`
+      ).join("");
+      document.querySelectorAll("nav button").forEach((btn) => {
+        btn.onclick = () => { state.page = btn.dataset.id; draw(); };
+      });
+    }
+
+    function disclaimer() {
+      return `<div class="card"><strong>Limitation.</strong> ${manifest.limitation || ""} Synthetic outputs are <em>not</em> equivalent to human research.</div>`;
+    }
+
+    async function draw() {
+      document.getElementById("banner").textContent = manifest.limitation || "Synthetic personas are simulation parameters, not psychological equivalents of humans.";
+      renderNav();
+      const main = document.getElementById("main");
+      try {
+        if (state.page === "settings") {
+          main.innerHTML = `<h1>Settings</h1>${disclaimer()}
+            <label>API base</label><input id="base" value="${state.base}" />
+            <label>Tenant id</label><input id="tid" value="${state.tenantId}" />
+            <label>Bearer token</label><input id="tok" type="password" value="${state.token}" />
+            <button class="primary" id="save">Save locally</button>
+            <p class="muted">Token is stored in this browser only. Never commit secrets.</p>`;
+          document.getElementById("save").onclick = () => {
+            state.base = document.getElementById("base").value.trim();
+            state.tenantId = document.getElementById("tid").value.trim();
+            state.token = document.getElementById("tok").value.trim();
+            localStorage.setItem("enterprise.apiBase", state.base);
+            localStorage.setItem("enterprise.tenantId", state.tenantId);
+            localStorage.setItem("enterprise.token", state.token);
+          };
+          return;
+        }
+        if (state.page === "overview") {
+          const tenants = await api("/api/v1/tenants");
+          main.innerHTML = `<h1>Overview</h1>${disclaimer()}
+            <div class="card"><p>Additive control plane. Harbor Job is not replaced. Default policy SANDBOX_ONLY.</p>
+            <p>Tenants: <strong>${tenants.length}</strong></p></div>`;
+          return;
+        }
+        if (state.page === "experiments" || state.page === "wizard") {
+          const steps = manifest.wizard.map((s, i) => `<span class="${i === state.step ? "on" : ""}">${i + 1}. ${s.label}</span>`).join("");
+          const w = state.wizard;
+          main.innerHTML = `<h1>Experiment wizard</h1>${disclaimer()}
+            <div class="steps">${steps}</div>
+            <div class="card">
+              <label>Hypothesis</label><textarea id="h">${w.hypothesis}</textarea>
+              <label>Objective</label><input id="o" value="${w.objective}" />
+              <label>Task path</label><input id="t" value="${w.task_path}" />
+              <label>Sample size</label><input id="n" type="number" value="${w.sample_size}" />
+              <div style="margin-top:12px">
+                <button class="ghost" id="prev">Back</button>
+                <button class="ghost" id="next">Next</button>
+                <button class="primary" id="launch">Launch sandbox</button>
+              </div>
+              <pre id="out"></pre>
+            </div>`;
+          const save = () => {
+            state.wizard.hypothesis = document.getElementById("h").value;
+            state.wizard.objective = document.getElementById("o").value;
+            state.wizard.task_path = document.getElementById("t").value;
+            state.wizard.sample_size = Number(document.getElementById("n").value || 2);
+          };
+          document.getElementById("prev").onclick = () => { save(); state.step = Math.max(0, state.step - 1); draw(); };
+          document.getElementById("next").onclick = () => { save(); state.step = Math.min(manifest.wizard.length - 1, state.step + 1); draw(); };
+          document.getElementById("launch").onclick = async () => {
+            save();
+            const exp = await api("/api/v1/experiments", { method: "POST", body: JSON.stringify(state.wizard) });
+            const exec = await api(`/api/v1/experiments/${exp.id}/execute`, { method: "POST", body: JSON.stringify({ worker_kind: "local" }) });
+            state.lastExecution = exec;
+            document.getElementById("out").textContent = JSON.stringify({
+              execution_id: exec.id, status: exec.status, decision: exec.decision,
+              trace_id: exec.result && exec.result.trace_id,
+              synthetic_equivalent_to_human_research: false,
+            }, null, 2);
+          };
+          return;
+        }
+        if (state.page === "evaluations" || state.page === "analytics") {
+          const execs = await api("/api/v1/executions");
+          const id = (state.lastExecution && state.lastExecution.id) || (execs[0] && execs[0].id);
+          let evalBody = null, metrics = null, failure = [];
+          if (id) {
+            evalBody = await api(`/api/v1/executions/${id}/evaluation`);
+            metrics = await api(`/api/v1/executions/${id}/metrics`);
+            failure = await api(`/api/v1/failures?execution_id=${id}`);
+          }
+          main.innerHTML = `<h1>${state.page === "analytics" ? "Analytics" : "Evaluations"}</h1>${disclaimer()}
+            <div class="card"><p>Executions: ${execs.length}${id ? " · selected " + id : ""}</p>
+            <p>synthetic_equivalent_to_human_research: <strong>false</strong></p>
+            <pre>${JSON.stringify({ evaluation: evalBody, hierarchy: metrics && metrics.hierarchy, failure }, null, 2)}</pre></div>`;
+          return;
+        }
+        if (["organizations","populations","personas"].includes(state.page)) {
+          const path = { organizations: "/api/v1/organizations", populations: "/api/v1/populations", personas: "/api/v1/personas" }[state.page];
+          const rows = state.tenantId ? await api(path) : [];
+          main.innerHTML = `<h1>${state.page}</h1>${disclaimer()}<div class="card"><pre>${JSON.stringify(rows, null, 2)}</pre></div>`;
+          return;
+        }
+        main.innerHTML = `<h1>${state.page}</h1>${disclaimer()}
+          <div class="card"><p class="muted">Placeholder. Phase 7 ships nav + wizard + artifact views. This page is a stub.</p></div>`;
+      } catch (err) {
+        main.innerHTML = `<h1>${state.page}</h1>${disclaimer()}<p class="err">${err.message}</p><p class="muted">Set tenant + token under Settings. Create a tenant via POST /api/v1/tenants if needed.</p>`;
+      }
+    }
+
+    (async function boot() {
+      try { manifest = await api("/api/v1/console/manifest"); }
+      catch (e) {
+        manifest = { nav: [
+          ["overview","Overview"],["organizations","Organizations"],["populations","Populations"],
+          ["personas","Personas"],["experiments","Experiments"],["tasks","Tasks"],
+          ["environments","Environments"],["models","Models"],["evaluations","Evaluations"],
+          ["analytics","Analytics"],["governance","Governance"],["audit","Audit"],
+          ["infrastructure","Infrastructure"],["settings","Settings"]
+        ].map(([id,label]) => ({id,label})), wizard: ["Population","Scenario","Task","Environment","AI System","Metrics","Governance","Scale","Cost","Launch"].map((label,i)=>({id:String(i),label})),
+          limitation: "Synthetic persona outputs are simulation parameters, not equivalent to human research." };
+      }
+      draw();
+    })();
+  </script>
+</body>
+</html>

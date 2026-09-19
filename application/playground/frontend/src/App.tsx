@@ -15,6 +15,7 @@ import { PersonaStoreView } from "@/components/PersonaStoreView";
 import { RunsView } from "@/components/RunsView";
 import { TaskGalleryView } from "@/components/TaskGalleryView";
 import { AppFooter } from "@/components/AppFooter";
+import { EnterpriseConsole } from "@/components/enterprise/EnterpriseConsole";
 
 import { api } from "@/lib/api";
 import { writePersonaHandoff } from "@/lib/personaHandoffStorage";
@@ -23,6 +24,7 @@ import type { ConfigOptionsResponse, Domain } from "@/lib/types";
 
 function parseMode(value: string | null): StudioMode {
   if (value === "playground") return "playground";
+  if (value === "enterprise") return "enterprise";
   return "home";
 }
 
@@ -53,8 +55,20 @@ export default function App() {
       view: null,
       harborJob: null,
       harborTrial: null,
+      entPage: null,
+      entExec: null,
     });
   }, [setUrlState]);
+
+  const openEnterprise = useCallback(() => {
+    setUrlState({
+      mode: "enterprise",
+      view: null,
+      harborJob: null,
+      harborTrial: null,
+      entPage: urlState.entPage || "overview",
+    });
+  }, [setUrlState, urlState.entPage]);
 
   const openTaskGallery = useCallback(() => {
     setUrlState({ view: "gallery", harborJob: null, harborTrial: null });
@@ -133,9 +147,11 @@ export default function App() {
         view: null,
         harborJob: null,
         harborTrial: null,
+        entPage: next === "enterprise" ? urlState.entPage || "overview" : null,
+        entExec: next === "enterprise" ? urlState.entExec : null,
       });
     },
-    [setUrlState],
+    [setUrlState, urlState.entExec, urlState.entPage],
   );
 
   const renderTopBar = (variant: "solid" | "glass" = "solid") => (
@@ -149,10 +165,26 @@ export default function App() {
       onOpenRuns={openRunsList}
       onOpenTaskGallery={openTaskGallery}
       onOpenPersonaStore={openPersonaStore}
+      enterpriseActive={mode === "enterprise"}
+      onOpenEnterprise={openEnterprise}
       variant={variant}
     />
   );
   const topBar = renderTopBar();
+
+  if (mode === "enterprise") {
+    return (
+      <div className="flex h-screen flex-col">
+        {topBar}
+        <EnterpriseConsole
+          page={urlState.entPage}
+          executionId={urlState.entExec}
+          onPageChange={(next) => setUrlState({ entPage: next })}
+          onExecutionChange={(next) => setUrlState({ entExec: next })}
+        />
+      </div>
+    );
+  }
 
   if (galleryViewActive) {
     return (
