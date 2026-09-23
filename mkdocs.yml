@@ -56,6 +56,9 @@ nav:
   - Packages: packages.md
   - Enterprise:
       - Repository audit: enterprise/REPOSITORY_AUDIT.md
+      - Implementation baseline: enterprise/IMPLEMENTATION_BASELINE.md
+      - Build report: enterprise/BUILD_REPORT.md
+      - Threat model: enterprise/THREAT_MODEL.md
       - Target architecture: enterprise/TARGET_ARCHITECTURE.md
       - Domain model: enterprise/DOMAIN_MODEL.md
       - Security model: enterprise/SECURITY_MODEL.md
@@ -63,3 +66,8 @@ nav:
       - Implementation roadmap: enterprise/IMPLEMENTATION_ROADMAP.md
   - ADR:
       - 0001 Platform boundaries: adr/0001-enterprise-platform-boundaries.md
+      - 0002 Persistence and record store: adr/0002-persistence-and-record-store.md
+      - 0003 Tenant isolation enforcement: adr/0003-tenant-isolation-enforcement.md
+      - 0004 Authorization model: adr/0004-authorization-model.md
+      - 0005 Audit strategy: adr/0005-audit-strategy.md
+      - 0006 Population immutability: adr/0006-population-immutability.md

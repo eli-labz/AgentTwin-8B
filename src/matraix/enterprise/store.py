@@ -2,7 +2,9 @@
 
 Default backend is in-memory so existing tests and local CLI stay unchanged.
 Set ``MATRIX_ENTERPRISE_STORE=sqlite`` for a durable file (path from
-``MATRIX_ENTERPRISE_DB``, default ``.enterprise/store.sqlite``).
+``MATRIX_ENTERPRISE_DB``, default ``.enterprise/store.sqlite``) or
+``MATRIX_ENTERPRISE_STORE=postgres`` with ``MATRIX_ENTERPRISE_DATABASE_URL``
+for production.
 """
 
 from __future__ import annotations
@@ -21,6 +23,7 @@ from matraix.enterprise.sqlite_store import SqliteEnterpriseStore
 
 STORE_ENV = "MATRIX_ENTERPRISE_STORE"
 DB_PATH_ENV = "MATRIX_ENTERPRISE_DB"
+POSTGRES_DSN_ENV = "MATRIX_ENTERPRISE_DATABASE_URL"
 DEFAULT_SQLITE_PATH = ".enterprise/store.sqlite"
 
 
@@ -36,8 +39,17 @@ def open_enterprise_store(
     if resolved in {"sqlite", "sqlite3"}:
         db_path = path if path is not None else os.environ.get(DB_PATH_ENV)
         return SqliteEnterpriseStore(db_path or DEFAULT_SQLITE_PATH)
+    if resolved in {"postgres", "postgresql", "pg"}:
+        from matraix.enterprise.postgres_store import PostgresEnterpriseStore
+
+        dsn = str(path) if path is not None else os.environ.get(POSTGRES_DSN_ENV)
+        if not dsn:
+            raise ValueError(
+                f"{POSTGRES_DSN_ENV} must be set for the postgres enterprise store"
+            )
+        return PostgresEnterpriseStore(dsn)
     raise ValueError(
-        f"unknown enterprise store {resolved!r}; use 'memory' or 'sqlite'"
+        f"unknown enterprise store {resolved!r}; use 'memory', 'sqlite' or 'postgres'"
     )
 
 

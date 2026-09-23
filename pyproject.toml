@@ -74,6 +74,8 @@ runloop = ["dockerfile-parse>=2.0.1", "runloop-api-client>=1.23.2"]
 tensorlake = ["tensorlake>=0.5.18"]
 tinker = ["tinker>=0.14.0", "tinker-cookbook>=0.1.0"]
 use-computer = ["use-computer[harbor,agents]>=0.0.44"]
+postgres = ["psycopg[binary]>=3.2"]
+oidc = ["pyjwt[crypto]>=2.9"]
 viz = ["matplotlib>=3.9.0", "numpy>=1.26.0", "pycirclize>=1.7.0"]
 wandb = ["cwsandbox>=0.23.3", "wandb>=0.27"]
 all = ["matraix[cloud]", "matraix[computer-1]", "matraix[tinker]"]
@@ -136,6 +138,10 @@ packages = [
     "matraix.agents.installed",
     "matraix.agents.persona",
     "matraix.enterprise",
+    "matraix.enterprise.auth",
+    "matraix.enterprise.domain",
+    "matraix.enterprise.population",
+    "matraix.enterprise.routes",
 ]
 
 [tool.setuptools.package-dir]

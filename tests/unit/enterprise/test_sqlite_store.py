@@ -193,6 +193,12 @@ def test_open_enterprise_store_sqlite_env(
 
 def test_open_enterprise_store_rejects_unknown() -> None:
     with pytest.raises(ValueError, match="unknown enterprise store"):
+        open_enterprise_store(backend="cassandra")
+
+
+def test_open_enterprise_store_postgres_requires_dsn(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("MATRIX_ENTERPRISE_DATABASE_URL", raising=False)
+    with pytest.raises(ValueError, match="MATRIX_ENTERPRISE_DATABASE_URL"):
         open_enterprise_store(backend="postgres")
 
 
@@ -262,6 +268,8 @@ def test_apply_migrations_is_idempotent(tmp_path: Path) -> None:
     conn = sqlite3.connect(path)
     first = apply_migrations(conn)
     second = apply_migrations(conn)
-    assert first == [1, 2]
+    from matraix.enterprise.migrations import LATEST_SCHEMA_VERSION
+
+    assert first == list(range(1, LATEST_SCHEMA_VERSION + 1))
     assert second == []
     conn.close()

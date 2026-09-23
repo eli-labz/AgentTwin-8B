@@ -280,3 +280,70 @@ def test_invalid_persona_schema_is_400() -> None:
         headers={"X-Tenant-Id": tenant["id"]},
     )
     assert response.status_code == 400
+
+
+def test_openapi_exposes_the_full_route_surface() -> None:
+    """Pin the route surface.
+
+    FastAPI wraps ``include_router`` results in a single object on ``app.routes``,
+    so counting that list cannot tell you whether a router was attached. The
+    OpenAPI schema is the authoritative view, and asserting it here means a
+    router that silently stops being included fails CI.
+    """
+    client = TestClient(create_enterprise_app(InMemoryEnterpriseStore()))
+    paths = set(client.get("/openapi.json").json()["paths"])
+
+    legacy = {
+        "/api/v1/tenants",
+        "/api/v1/tenants/{tenant_id}",
+        "/api/v1/organizations",
+        "/api/v1/populations",
+        "/api/v1/populations/{population_id}",
+        "/api/v1/personas",
+        "/api/v1/personas/{persona_id}",
+        "/api/v1/org-edges",
+        "/api/v1/org-edges/{edge_id}",
+        "/api/v1/population-declarations",
+        "/api/v1/populations/{population_id}/declaration",
+    }
+    identity = {
+        "/api/v1/whoami",
+        "/api/v1/roles",
+        "/api/v1/users",
+        "/api/v1/users/{user_id}",
+        "/api/v1/service-accounts",
+        "/api/v1/service-accounts/{account_id}/disable",
+        "/api/v1/role-bindings",
+    }
+    audit = {"/api/v1/audit-events", "/api/v1/audit-events/verify"}
+    population_engine = {
+        "/api/v1/populations/{population_id}/versions",
+        "/api/v1/population-versions/{version_id}",
+        "/api/v1/population-versions/{version_id}/quality",
+        "/api/v1/population-versions/{version_id}/composition",
+        "/api/v1/population-versions/{version_id}/personas",
+        "/api/v1/population-versions/{version_id}/freeze",
+        "/api/v1/population-versions/{version_id}/cohorts",
+        "/api/v1/cohorts",
+        "/api/v1/cohorts/{cohort_id}",
+    }
+    for group in (legacy, identity, audit, population_engine):
+        assert group <= paths, sorted(group - paths)
+
+
+def test_broken_router_is_not_silently_skipped(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A present-but-broken router must fail loudly, not disappear."""
+    import importlib
+
+    from matraix.enterprise import api as api_module
+
+    real_import = importlib.import_module
+
+    def _explode(name: str, *args, **kwargs):
+        if name.endswith("routes.populations"):
+            raise ImportError("simulated broken router")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(importlib, "import_module", _explode)
+    with pytest.raises(ImportError, match="simulated broken router"):
+        api_module.create_enterprise_app(InMemoryEnterpriseStore())

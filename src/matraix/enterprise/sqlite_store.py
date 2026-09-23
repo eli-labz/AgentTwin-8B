@@ -52,6 +52,7 @@ from matraix.enterprise.population_builder import (
 from matraix.enterprise.migrations import apply_migrations
 from matraix.enterprise.persona_schema import parse_enterprise_block
 from matraix.enterprise.policy import DataClassification, PolicyDecision
+from matraix.enterprise.records import SqlRecordStoreBase
 from matraix.enterprise.repositories import _require_tenant
 
 
@@ -66,11 +67,19 @@ def _json_dumps(value: Any) -> str:
     return json.dumps(value, separators=(",", ":"), sort_keys=True)
 
 
-class SqliteEnterpriseStore:
-    """File or ``:memory:`` store selected by ``MATRIX_ENTERPRISE_STORE=sqlite``."""
+class SqliteEnterpriseStore(SqlRecordStoreBase):
+    """File or ``:memory:`` store selected by ``MATRIX_ENTERPRISE_STORE=sqlite``.
+
+    Legacy typed tables (migrations 1-2) back the Phase 0 entities; the generic
+    ``enterprise_records`` table and companions (migration 3) back every
+    :mod:`matraix.enterprise.domain` record through :class:`SqlRecordStoreBase`.
+    """
+
+    dialect = "sqlite"
 
     def __init__(self, path: str | Path) -> None:
         self.path = str(path)
+        self._tx_depth = 0
         if self.path != ":memory:":
             Path(self.path).parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.RLock()

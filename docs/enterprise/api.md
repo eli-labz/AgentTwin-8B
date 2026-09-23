@@ -22,6 +22,60 @@ uv run matraix enterprise-api --port 8090
 
 Equivalent: `uvicorn matraix.enterprise.api:app --port 8090`.
 
+## Authentication and authorization
+
+Providers are tried in order: static local tokens, service accounts (hashed tokens in the store),
+then OIDC/JWT. Configure any of:
+
+```bash
+# Platform-admin shared token (backward compatible)
+export MATRIX_ENTERPRISE_API_TOKEN=...
+
+# Per-principal static tokens: token -> {subject, tenant_id, roles, kind, platform_admin}
+export MATRIX_ENTERPRISE_AUTH_TOKENS='{"tok":{"subject":"alice","tenant_id":"tnt_x","roles":["researcher"]}}'
+
+# OIDC / JWT
+export MATRIX_ENTERPRISE_OIDC_ISSUER=https://idp.example
+export MATRIX_ENTERPRISE_OIDC_AUDIENCE=agenttwin
+export MATRIX_ENTERPRISE_OIDC_JWKS_URL=https://idp.example/.well-known/jwks.json
+# optional: _TENANT_CLAIM (default tenant_id), _ROLES_CLAIM (default roles)
+
+# Refuse to serve unauthenticated (recommended for any shared deployment)
+export MATRIX_ENTERPRISE_AUTH_MODE=strict
+```
+
+With **no** credential configured the API stays open for local development and logs one warning.
+
+Roles are nested: `viewer ⊂ analyst ⊂ researcher ⊂ operator ⊂ admin`. Permissions are
+`resource.verb` strings; `GET /api/v1/roles` returns the full matrix. A researcher can launch
+work, an operator can approve it and read audit, an admin manages identities.
+
+The tenant a request acts in comes from the **principal**. `X-Tenant-Id` may only widen scope for
+a platform admin; for a tenant-bound principal a mismatched header is `403`.
+
+## Errors, request ids and idempotency
+
+Every response carries `X-Request-Id` (honoured from the request when supplied). Errors use a
+stable object:
+
+```json
+{"detail": "…", "error": {"code": "not_found", "message": "…", "request_id": "req_…"}}
+```
+
+Codes: `invalid_request` (400), `unauthenticated` (401), `forbidden` / `cross_tenant_access` (403),
+`not_found` (404), `conflict` (409), `validation_error` (422).
+
+Mutating launch-style operations accept an `Idempotency-Key` header. Replaying the same key
+returns the first response instead of performing the work twice.
+
+List endpoints return a bare JSON array by default (unchanged). Passing `?limit=` switches to an
+envelope: `{"items": [...], "total": N, "limit": L, "offset": O, "next_offset": N|null}`.
+
+## Health
+
+`GET /health` is liveness. `GET /ready` reports readiness, the active store class and whether
+authentication is open; it returns `503` when the store is unreachable.
+
 ## Conventions
 
 - JSON field names match the domain model (snake_case).
@@ -55,6 +109,28 @@ Equivalent: `uvicorn matraix.enterprise.api:app --port 8090`.
 | `POST` | `/api/v1/population-declarations` | required | Create population + validate shape |
 | `PUT` | `/api/v1/populations/{id}/declaration` | required | Attach/replace a shape on a population |
 | `GET` | `/api/v1/populations/{id}/declaration` | required | Read the validated shape |
+| `GET` | `/api/v1/whoami` | no | Authenticated principal, roles and permissions |
+| `GET` | `/api/v1/roles` | no | Role → permission matrix |
+| `POST` | `/api/v1/users` | required | Create a tenant user (`identity.write`) |
+| `GET` | `/api/v1/users` | required | List users (`identity.read`) |
+| `POST` | `/api/v1/service-accounts` | required | Create a service account; returns the token **once** |
+| `GET` | `/api/v1/service-accounts` | required | List service accounts (hash and raw token never returned) |
+| `POST` | `/api/v1/service-accounts/{id}/disable` | required | Revoke a service account |
+| `POST` | `/api/v1/role-bindings` | required | Bind a role to a principal |
+| `GET` | `/api/v1/role-bindings` | required | List role bindings |
+| `POST` | `/api/v1/organizations` | required | Create an organization (`organization.write`) |
+| `POST` | `/api/v1/populations/{id}/versions` | required | **Materialize** an immutable population version |
+| `GET` | `/api/v1/populations/{id}/versions` | required | List versions of a population |
+| `GET` | `/api/v1/population-versions/{id}` | required | Version detail with full provenance |
+| `GET` | `/api/v1/population-versions/{id}/quality` | required | Quality report and validity classification |
+| `GET` | `/api/v1/population-versions/{id}/composition` | required | Aggregate subgroup composition (no full records) |
+| `GET` | `/api/v1/population-versions/{id}/personas` | required | Paginated persona snapshot manifest |
+| `POST` | `/api/v1/population-versions/{id}/freeze` | required | Mark a ready version frozen |
+| `POST` | `/api/v1/population-versions/{id}/cohorts` | required | Create a reproducible cohort |
+| `GET` | `/api/v1/cohorts` | required | List cohorts; optional `?population_version_id=` |
+| `GET` | `/api/v1/cohorts/{id}` | required | Cohort detail |
+| `GET` | `/api/v1/audit-events` | required | Read the append-only audit stream (`audit.read`) |
+| `GET` | `/api/v1/audit-events/verify` | required | Verify the tenant's audit hash chain |
 
 ### Create tenant
 

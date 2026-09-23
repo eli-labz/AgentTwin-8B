@@ -41,6 +41,7 @@ from matraix.enterprise.ids import (
     TenantId,
 )
 from matraix.enterprise.population_builder import PopulationDeclaration
+from matraix.enterprise.records import InMemoryRecordStore
 
 T = TypeVar("T")
 
@@ -145,10 +146,16 @@ class _TenantBucket:
     )
 
 
-class InMemoryEnterpriseStore:
-    """Process-local store sufficient for unit and tenancy tests."""
+class InMemoryEnterpriseStore(InMemoryRecordStore):
+    """Process-local store sufficient for unit and tenancy tests.
+
+    Legacy typed buckets hold the Phase 0 entities; :class:`InMemoryRecordStore`
+    (base class) holds every :mod:`matraix.enterprise.domain` record, the audit
+    stream, work items, persona snapshots and idempotency keys.
+    """
 
     def __init__(self) -> None:
+        super().__init__()
         self._tenants: dict[str, Tenant] = {}
         self._buckets: dict[str, _TenantBucket] = {}
 

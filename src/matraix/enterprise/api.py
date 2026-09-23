@@ -1,32 +1,51 @@
 """Versioned AgentTwin Enterprise control-plane API (``/api/v1``).
 
-Standalone FastAPI app — does not replace Playground. Tenant isolation is
-enforced by ``X-Tenant-Id`` plus the repository contract. When
-``MATRIX_ENTERPRISE_API_TOKEN`` is set, requests must send
-``Authorization: Bearer <token>``. The token is read from the environment only.
+Standalone FastAPI app — does not replace Playground (it can also be mounted
+into the Playground backend, see :func:`mount_enterprise_api`).
+
+Request pipeline (all requests):
+
+1. ``X-Request-Id`` is honoured or generated and echoed back.
+2. The configured :class:`~matraix.enterprise.auth.ChainAuthProvider` resolves a
+   :class:`~matraix.enterprise.auth.Principal`; ``/docs``, ``/openapi.json``,
+   ``/health`` and ``/ready`` are public. No principal → ``401``.
+3. Handlers derive the tenant from the principal (``X-Tenant-Id`` only widens
+   for platform admins; a mismatch is ``403``) and call :func:`guard` for the
+   required permission. Every mutation writes an audit row.
+4. Errors return a stable object ``{"detail", "error": {"code", "message",
+   "request_id"}}``.
+
+Backward compatibility: the Phase 1–2 routes, payloads and the shared
+``MATRIX_ENTERPRISE_API_TOKEN`` (now a platform-admin credential) keep working.
+When no credential is configured the API stays open for local development.
 """
 
 from __future__ import annotations
 
-import os
+import logging
+import uuid
 from typing import Annotated, Any
 
-from fastapi import FastAPI, Header, HTTPException, Query, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
+from matraix.enterprise.audit import AuditCategory
+from matraix.enterprise.auth.principal import Principal
+from matraix.enterprise.auth.roles import AuthenticationError, AuthorizationError, Permission
+from matraix.enterprise.context import EnterpriseContext, build_context
 from matraix.enterprise.entities import (
     EnterprisePersona,
     Organization,
     Population,
     Tenant,
 )
-from matraix.enterprise.graph import OrgEdge, OrgNodeKind, OrgRelation
 from matraix.enterprise.errors import (
     CrossTenantAccessError,
     EnterpriseSchemaError,
     EntityNotFoundError,
 )
+from matraix.enterprise.graph import OrgEdge, OrgRelation
 from matraix.enterprise.ids import (
     EntityKind,
     OrganizationId,
@@ -40,15 +59,34 @@ from matraix.enterprise.population_builder import (
     PopulationSegment,
     build_population_declaration,
 )
+from matraix.enterprise.records import ConcurrencyError
 from matraix.enterprise.repositories import EnterpriseRepository
+from matraix.enterprise.routes.common import (
+    REQUEST_ID_HEADER,
+    TENANT_HEADER,
+    Page,
+    current_principal,
+    error_body,
+    guard,
+    paginate,
+    parse_tenant_id,
+    request_id_of,
+    tenant_scope,
+)
 from matraix.enterprise.store import (
     create_tenant_with_default_org,
     default_organization_for,
-    open_enterprise_store,
 )
 
 API_TOKEN_ENV = "MATRIX_ENTERPRISE_API_TOKEN"
-TENANT_HEADER = "X-Tenant-Id"
+PUBLIC_PATHS = frozenset({"/docs", "/redoc", "/openapi.json", "/health", "/ready"})
+
+logger = logging.getLogger("matraix.enterprise.api")
+
+
+# --------------------------------------------------------------------------- #
+# Legacy IO models (unchanged shapes)
+# --------------------------------------------------------------------------- #
 
 
 class TenantCreate(BaseModel):
@@ -59,6 +97,13 @@ class TenantCreate(BaseModel):
 class OrganizationOut(BaseModel):
     id: str
     tenant_id: str
+    name: str
+    parent_id: str | None = None
+    industry: str | None = None
+    geography: str | None = None
+
+
+class OrganizationCreate(BaseModel):
     name: str
     parent_id: str | None = None
     industry: str | None = None
@@ -158,35 +203,9 @@ class PopulationDeclarationIn(BaseModel):
     description: str | None = None
 
 
-def _configured_token() -> str | None:
-    token = os.environ.get(API_TOKEN_ENV, "").strip()
-    return token or None
-
-
-def _require_token(request: Request) -> None:
-    expected = _configured_token()
-    if expected is None:
-        return
-    header = request.headers.get("authorization") or ""
-    prefix = "bearer "
-    got = header[len(prefix) :].strip() if header.lower().startswith(prefix) else ""
-    if not got or got != expected:
-        raise HTTPException(status_code=401, detail="invalid or missing API token")
-
-
-def _parse_tenant_id(raw: str) -> TenantId:
-    try:
-        return TenantId(raw)
-    except EnterpriseSchemaError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-
-def _require_tenant_header(x_tenant_id: str | None) -> TenantId:
-    if not x_tenant_id or not str(x_tenant_id).strip():
-        raise HTTPException(
-            status_code=400, detail=f"{TENANT_HEADER} header is required"
-        )
-    return _parse_tenant_id(x_tenant_id)
+# --------------------------------------------------------------------------- #
+# Serializers
+# --------------------------------------------------------------------------- #
 
 
 def _organization_out(organization: Organization) -> OrganizationOut:
@@ -276,104 +295,273 @@ def _resolve_organization_id(
     return default_organization_for(store, tenant_id).id
 
 
+# --------------------------------------------------------------------------- #
+# App factory
+# --------------------------------------------------------------------------- #
+
+
+def _install_error_handlers(app: FastAPI) -> None:
+    def _json(status: int, code: str, message: str, request: Request) -> JSONResponse:
+        response = JSONResponse(
+            status_code=status,
+            content=error_body(code, message, request_id_of(request)),
+        )
+        rid = request_id_of(request)
+        if rid:
+            response.headers[REQUEST_ID_HEADER] = rid
+        return response
+
+    @app.exception_handler(CrossTenantAccessError)
+    async def _cross_tenant(request: Request, exc: CrossTenantAccessError) -> JSONResponse:
+        return _json(403, "cross_tenant_access", str(exc), request)
+
+    @app.exception_handler(AuthorizationError)
+    async def _forbidden(request: Request, exc: AuthorizationError) -> JSONResponse:
+        return _json(403, "forbidden", str(exc), request)
+
+    @app.exception_handler(AuthenticationError)
+    async def _unauthenticated(request: Request, exc: AuthenticationError) -> JSONResponse:
+        return _json(401, "unauthenticated", str(exc), request)
+
+    @app.exception_handler(EntityNotFoundError)
+    async def _not_found(request: Request, exc: EntityNotFoundError) -> JSONResponse:
+        message = exc.args[0] if exc.args else str(exc)
+        return _json(404, "not_found", str(message), request)
+
+    @app.exception_handler(EnterpriseSchemaError)
+    async def _schema(request: Request, exc: EnterpriseSchemaError) -> JSONResponse:
+        return _json(400, "invalid_request", str(exc), request)
+
+    @app.exception_handler(ConcurrencyError)
+    async def _conflict(request: Request, exc: ConcurrencyError) -> JSONResponse:
+        return _json(409, "conflict", str(exc), request)
+
+    @app.exception_handler(HTTPException)
+    async def _http(request: Request, exc: HTTPException) -> JSONResponse:
+        codes = {400: "invalid_request", 401: "unauthenticated", 403: "forbidden", 404: "not_found", 409: "conflict", 422: "validation_error"}
+        detail = exc.detail if isinstance(exc.detail, str) else str(exc.detail)
+        response = _json(exc.status_code, codes.get(exc.status_code, "error"), detail, request)
+        if exc.headers:
+            for key, value in exc.headers.items():
+                response.headers[key] = value
+        return response
+
+
+def _install_middleware(app: FastAPI) -> None:
+    @app.middleware("http")
+    async def _request_pipeline(request: Request, call_next):
+        request.state.request_id = request.headers.get(REQUEST_ID_HEADER) or f"req_{uuid.uuid4().hex[:16]}"
+        ctx: EnterpriseContext = request.app.state.context
+        path = request.url.path
+        request.state.principal = None
+        if path not in PUBLIC_PATHS and not path.startswith("/docs"):
+            try:
+                principal = ctx.auth.authenticate(request.headers)
+            except AuthenticationError as exc:
+                return _error_response(request, 401, "unauthenticated", str(exc))
+            if principal is None:
+                return _error_response(request, 401, "unauthenticated", "invalid or missing API token")
+            request.state.principal = principal
+        response = await call_next(request)
+        response.headers[REQUEST_ID_HEADER] = request.state.request_id
+        return response
+
+
+def _error_response(request: Request, status: int, code: str, message: str) -> JSONResponse:
+    response = JSONResponse(status_code=status, content=error_body(code, message, request_id_of(request)))
+    rid = request_id_of(request)
+    if rid:
+        response.headers[REQUEST_ID_HEADER] = rid
+    return response
+
+
+def _include_routers(app: FastAPI) -> None:
+    """Attach every available router.
+
+    A module that exists but fails to import is a **real error** and propagates:
+    silently skipping it would hide a broken endpoint in production while tests
+    that import the module directly still pass. Routers for later phases are not
+    in the tree yet, so they are probed with ``find_spec`` and skipped only when
+    genuinely absent.
+    """
+    import importlib
+    import importlib.util
+
+    required = ("identity", "audit", "populations")
+    later_phases = ("graph", "experiments", "runs", "governance", "metrics")
+
+    for module_name in required:
+        module = importlib.import_module(f"matraix.enterprise.routes.{module_name}")
+        app.include_router(module.router)
+
+    for module_name in later_phases:
+        qualified = f"matraix.enterprise.routes.{module_name}"
+        if importlib.util.find_spec(qualified) is None:
+            continue
+        module = importlib.import_module(qualified)
+        app.include_router(module.router)
+
+
 def create_enterprise_app(
     store: EnterpriseRepository | None = None,
+    *,
+    context: EnterpriseContext | None = None,
 ) -> FastAPI:
-    repository = store or open_enterprise_store()
+    ctx = context or build_context(store)
+    repository = ctx.store
 
     app = FastAPI(
         title="AgentTwin Enterprise API",
         version="v1",
         description=(
-            "Tenant-scoped control plane for tenants, populations, and personas. "
-            "Does not replace Playground or Harbor. Synthetic personas are "
-            "simulation parameters, not psychological equivalents of humans."
+            "Tenant-scoped control plane for tenants, identities, populations, "
+            "organizational graphs, experiments, runs, governance, metrics, reports "
+            "and audit. Does not replace Playground or Harbor. Simulated users are "
+            "controlled experimental instruments, not validated replacements for "
+            "evidence from real human populations."
         ),
         openapi_tags=[
             {"name": "tenants", "description": "Isolation boundaries"},
             {"name": "organizations", "description": "Business units under a tenant"},
-            {"name": "populations", "description": "Named persona sets"},
+            {"name": "identities", "description": "Users, service accounts, role bindings"},
+            {"name": "populations", "description": "Named persona sets, versions, cohorts"},
             {
                 "name": "population-declarations",
                 "description": "Shaped population builder (does not rewrite persona/synthesis)",
             },
             {"name": "org-edges", "description": "Organizational graph relationships"},
+            {"name": "org-graph", "description": "Organizational nodes and visualization payloads"},
             {"name": "personas", "description": "Wrappers around existing YAML records"},
+            {"name": "experiments", "description": "Experiment definitions, versions, lifecycle"},
+            {"name": "runs", "description": "Runs, trials, work queue"},
+            {"name": "governance", "description": "Policies, budgets, quotas, approvals, models"},
+            {"name": "metrics", "description": "Metrics and reports"},
+            {"name": "audit", "description": "Append-only security audit stream"},
         ],
     )
     app.state.store = repository
+    app.state.context = ctx
 
-    @app.exception_handler(CrossTenantAccessError)
-    async def _cross_tenant(_request: Request, exc: CrossTenantAccessError) -> JSONResponse:
-        return JSONResponse(status_code=403, content={"detail": str(exc)})
-
-    @app.exception_handler(EntityNotFoundError)
-    async def _not_found(_request: Request, exc: EntityNotFoundError) -> JSONResponse:
-        return JSONResponse(status_code=404, content={"detail": str(exc)})
-
-    @app.exception_handler(EnterpriseSchemaError)
-    async def _schema(_request: Request, exc: EnterpriseSchemaError) -> JSONResponse:
-        return JSONResponse(status_code=400, content={"detail": str(exc)})
-
-    @app.middleware("http")
-    async def _auth_middleware(request: Request, call_next):
-        if request.url.path in {"/docs", "/redoc", "/openapi.json"}:
-            return await call_next(request)
-        try:
-            _require_token(request)
-        except HTTPException as exc:
-            return JSONResponse(
-                status_code=exc.status_code, content={"detail": exc.detail}
-            )
-        return await call_next(request)
+    _install_error_handlers(app)
+    _install_middleware(app)
 
     def _store() -> EnterpriseRepository:
         return app.state.store
 
     @app.get("/health", include_in_schema=False)
     def health() -> dict[str, str]:
-        return {"status": "ok"}
+        return {"status": "ok", "service": ctx.settings.service_name}
 
+    @app.get("/ready", include_in_schema=False)
+    def ready() -> JSONResponse:
+        try:
+            ctx.store.list_tenants()
+        except Exception as exc:  # noqa: BLE001 - readiness must report, not raise
+            return JSONResponse(status_code=503, content={"status": "unavailable", "reason": exc.__class__.__name__})
+        return JSONResponse(
+            status_code=200,
+            content={"status": "ready", "store": type(ctx.store).__name__, "auth_open": ctx.auth.open},
+        )
+
+    # ---------------------------------------------------------------- tenants
     @app.post("/api/v1/tenants", response_model=TenantOut, tags=["tenants"])
-    def create_tenant(payload: TenantCreate) -> TenantOut:
+    def create_tenant(
+        payload: TenantCreate,
+        request: Request,
+        principal: Annotated[Principal, Depends(current_principal)],
+    ) -> TenantOut:
+        if not principal.platform_admin:
+            raise AuthorizationError("only platform administrators can create tenants")
         tenant, _organization = create_tenant_with_default_org(
             _store(), name=payload.name, slug=payload.slug
         )
+        ctx.audit.record(
+            tenant_id=tenant.id.value,
+            principal=principal,
+            action="tenant.create",
+            category=AuditCategory.ADMIN,
+            resource_type="tenant",
+            resource_id=tenant.id.value,
+            request_id=request_id_of(request),
+            details={"slug": tenant.slug},
+        )
         return _tenant_out(_store(), tenant)
 
-    @app.get("/api/v1/tenants", response_model=list[TenantOut], tags=["tenants"])
-    def list_tenants() -> list[TenantOut]:
-        return [_tenant_out(_store(), tenant) for tenant in _store().list_tenants()]
+    @app.get("/api/v1/tenants", tags=["tenants"])
+    def list_tenants(
+        principal: Annotated[Principal, Depends(current_principal)],
+        page: Annotated[Page, Depends()],
+    ) -> Any:
+        tenants = _store().list_tenants()
+        if not principal.platform_admin:
+            tenants = [item for item in tenants if principal.tenant_id and item.id.value == principal.tenant_id]
+        return paginate([_tenant_out(_store(), tenant) for tenant in tenants], page)
 
     @app.get("/api/v1/tenants/{tenant_id}", response_model=TenantOut, tags=["tenants"])
     def get_tenant(
         tenant_id: str,
+        request: Request,
+        principal: Annotated[Principal, Depends(current_principal)],
         x_tenant_id: Annotated[str | None, Header(alias=TENANT_HEADER)] = None,
     ) -> TenantOut:
-        resolved = _parse_tenant_id(tenant_id)
-        if x_tenant_id and _parse_tenant_id(x_tenant_id) != resolved:
+        resolved = parse_tenant_id(tenant_id)
+        if x_tenant_id and parse_tenant_id(x_tenant_id) != resolved:
             raise HTTPException(
                 status_code=403, detail="X-Tenant-Id does not match path tenant"
             )
+        guard(request, ctx, principal, Permission.TENANT_READ, resolved)
         return _tenant_out(_store(), _store().get_tenant(resolved))
 
-    @app.get(
-        "/api/v1/organizations",
-        response_model=list[OrganizationOut],
-        tags=["organizations"],
-    )
+    # ---------------------------------------------------------- organizations
+    @app.get("/api/v1/organizations", tags=["organizations"])
     def list_organizations(
-        x_tenant_id: Annotated[str | None, Header(alias=TENANT_HEADER)] = None,
-    ) -> list[OrganizationOut]:
-        tenant = _require_tenant_header(x_tenant_id)
-        return [_organization_out(item) for item in _store().list_organizations(tenant)]
+        request: Request,
+        principal: Annotated[Principal, Depends(current_principal)],
+        tenant: Annotated[TenantId, Depends(tenant_scope)],
+        page: Annotated[Page, Depends()],
+    ) -> Any:
+        guard(request, ctx, principal, Permission.ORGANIZATION_READ, tenant)
+        return paginate([_organization_out(item) for item in _store().list_organizations(tenant)], page)
 
+    @app.post("/api/v1/organizations", response_model=OrganizationOut, tags=["organizations"])
+    def create_organization(
+        payload: OrganizationCreate,
+        request: Request,
+        principal: Annotated[Principal, Depends(current_principal)],
+        tenant: Annotated[TenantId, Depends(tenant_scope)],
+    ) -> OrganizationOut:
+        guard(request, ctx, principal, Permission.ORGANIZATION_WRITE, tenant)
+        organization = Organization(
+            id=OrganizationId(tenant, new_id(EntityKind.ORGANIZATION)),
+            tenant_id=tenant,
+            name=payload.name,
+            parent_id=OrganizationId(tenant, payload.parent_id) if payload.parent_id else None,
+            industry=payload.industry,
+            geography=payload.geography,
+        )
+        if organization.parent_id is not None:
+            _store().get_organization(tenant, organization.parent_id)
+        stored = _store().put_organization(organization)
+        ctx.audit.record(
+            tenant_id=tenant.value,
+            principal=principal,
+            action="organization.create",
+            category=AuditCategory.RESOURCE_CREATE,
+            resource_type="organization",
+            resource_id=stored.id.value,
+            request_id=request_id_of(request),
+        )
+        return _organization_out(stored)
+
+    # ------------------------------------------------------------ populations
     @app.post("/api/v1/populations", response_model=PopulationOut, tags=["populations"])
     def create_population(
         payload: PopulationCreate,
-        x_tenant_id: Annotated[str | None, Header(alias=TENANT_HEADER)] = None,
+        request: Request,
+        principal: Annotated[Principal, Depends(current_principal)],
+        tenant: Annotated[TenantId, Depends(tenant_scope)],
     ) -> PopulationOut:
-        tenant = _require_tenant_header(x_tenant_id)
+        guard(request, ctx, principal, Permission.POPULATION_WRITE, tenant)
         organization_id = _resolve_organization_id(
             _store(), tenant, payload.organization_id
         )
@@ -385,16 +573,27 @@ def create_enterprise_app(
             description=payload.description,
             target_size=payload.target_size,
         )
-        return _population_out(_store().put_population(population))
+        stored = _store().put_population(population)
+        ctx.audit.record(
+            tenant_id=tenant.value,
+            principal=principal,
+            action="population.create",
+            category=AuditCategory.RESOURCE_CREATE,
+            resource_type="population",
+            resource_id=stored.id.value,
+            request_id=request_id_of(request),
+        )
+        return _population_out(stored)
 
-    @app.get(
-        "/api/v1/populations", response_model=list[PopulationOut], tags=["populations"]
-    )
+    @app.get("/api/v1/populations", tags=["populations"])
     def list_populations(
-        x_tenant_id: Annotated[str | None, Header(alias=TENANT_HEADER)] = None,
-    ) -> list[PopulationOut]:
-        tenant = _require_tenant_header(x_tenant_id)
-        return [_population_out(item) for item in _store().list_populations(tenant)]
+        request: Request,
+        principal: Annotated[Principal, Depends(current_principal)],
+        tenant: Annotated[TenantId, Depends(tenant_scope)],
+        page: Annotated[Page, Depends()],
+    ) -> Any:
+        guard(request, ctx, principal, Permission.POPULATION_READ, tenant)
+        return paginate([_population_out(item) for item in _store().list_populations(tenant)], page)
 
     @app.get(
         "/api/v1/populations/{population_id}",
@@ -403,19 +602,24 @@ def create_enterprise_app(
     )
     def get_population(
         population_id: str,
-        x_tenant_id: Annotated[str | None, Header(alias=TENANT_HEADER)] = None,
+        request: Request,
+        principal: Annotated[Principal, Depends(current_principal)],
+        tenant: Annotated[TenantId, Depends(tenant_scope)],
     ) -> PopulationOut:
-        tenant = _require_tenant_header(x_tenant_id)
+        guard(request, ctx, principal, Permission.POPULATION_READ, tenant)
         return _population_out(
             _store().get_population(tenant, PopulationId(tenant, population_id))
         )
 
+    # --------------------------------------------------------------- personas
     @app.post("/api/v1/personas", response_model=PersonaOut, tags=["personas"])
     def create_persona(
         payload: PersonaCreate,
-        x_tenant_id: Annotated[str | None, Header(alias=TENANT_HEADER)] = None,
+        request: Request,
+        principal: Annotated[Principal, Depends(current_principal)],
+        tenant: Annotated[TenantId, Depends(tenant_scope)],
     ) -> PersonaOut:
-        tenant = _require_tenant_header(x_tenant_id)
+        guard(request, ctx, principal, Permission.POPULATION_WRITE, tenant)
         organization_id = _resolve_organization_id(
             _store(), tenant, payload.organization_id
         )
@@ -430,14 +634,27 @@ def create_enterprise_app(
             record=payload.record,
             population_id=population_id,
         )
-        return _persona_out(_store().put_persona(persona))
+        stored = _store().put_persona(persona)
+        ctx.audit.record(
+            tenant_id=tenant.value,
+            principal=principal,
+            action="persona.create",
+            category=AuditCategory.RESOURCE_CREATE,
+            resource_type="persona",
+            resource_id=stored.id.value,
+            request_id=request_id_of(request),
+        )
+        return _persona_out(stored)
 
-    @app.get("/api/v1/personas", response_model=list[PersonaOut], tags=["personas"])
+    @app.get("/api/v1/personas", tags=["personas"])
     def list_personas(
-        x_tenant_id: Annotated[str | None, Header(alias=TENANT_HEADER)] = None,
+        request: Request,
+        principal: Annotated[Principal, Depends(current_principal)],
+        tenant: Annotated[TenantId, Depends(tenant_scope)],
+        page: Annotated[Page, Depends()],
         population_id: Annotated[str | None, Query()] = None,
-    ) -> list[PersonaOut]:
-        tenant = _require_tenant_header(x_tenant_id)
+    ) -> Any:
+        guard(request, ctx, principal, Permission.POPULATION_READ, tenant)
         items = _store().list_personas(tenant)
         if population_id:
             wanted = PopulationId(tenant, population_id)
@@ -446,22 +663,27 @@ def create_enterprise_app(
                 for item in items
                 if item.population_id is not None and item.population_id == wanted
             ]
-        return [_persona_out(item) for item in items]
+        return paginate([_persona_out(item) for item in items], page)
 
     @app.get("/api/v1/personas/{persona_id}", response_model=PersonaOut, tags=["personas"])
     def get_persona(
         persona_id: str,
-        x_tenant_id: Annotated[str | None, Header(alias=TENANT_HEADER)] = None,
+        request: Request,
+        principal: Annotated[Principal, Depends(current_principal)],
+        tenant: Annotated[TenantId, Depends(tenant_scope)],
     ) -> PersonaOut:
-        tenant = _require_tenant_header(x_tenant_id)
+        guard(request, ctx, principal, Permission.POPULATION_READ, tenant)
         return _persona_out(_store().get_persona(tenant, PersonaId(tenant, persona_id)))
 
+    # -------------------------------------------------------------- org edges
     @app.post("/api/v1/org-edges", response_model=OrgEdgeOut, tags=["org-edges"])
     def create_org_edge(
         payload: OrgEdgeCreate,
-        x_tenant_id: Annotated[str | None, Header(alias=TENANT_HEADER)] = None,
+        request: Request,
+        principal: Annotated[Principal, Depends(current_principal)],
+        tenant: Annotated[TenantId, Depends(tenant_scope)],
     ) -> OrgEdgeOut:
-        tenant = _require_tenant_header(x_tenant_id)
+        guard(request, ctx, principal, Permission.GRAPH_WRITE, tenant)
         organization_id = _resolve_organization_id(
             _store(), tenant, payload.organization_id
         )
@@ -476,14 +698,27 @@ def create_enterprise_app(
             target_id=payload.target_id,
             attributes=payload.attributes,
         )
-        return _org_edge_out(_store().put_org_edge(edge))
+        stored = _store().put_org_edge(edge)
+        ctx.audit.record(
+            tenant_id=tenant.value,
+            principal=principal,
+            action="org_edge.create",
+            category=AuditCategory.RESOURCE_CREATE,
+            resource_type="org_edge",
+            resource_id=stored.id.value,
+            request_id=request_id_of(request),
+        )
+        return _org_edge_out(stored)
 
-    @app.get("/api/v1/org-edges", response_model=list[OrgEdgeOut], tags=["org-edges"])
+    @app.get("/api/v1/org-edges", tags=["org-edges"])
     def list_org_edges(
-        x_tenant_id: Annotated[str | None, Header(alias=TENANT_HEADER)] = None,
+        request: Request,
+        principal: Annotated[Principal, Depends(current_principal)],
+        tenant: Annotated[TenantId, Depends(tenant_scope)],
+        page: Annotated[Page, Depends()],
         relation: Annotated[str | None, Query()] = None,
-    ) -> list[OrgEdgeOut]:
-        tenant = _require_tenant_header(x_tenant_id)
+    ) -> Any:
+        guard(request, ctx, principal, Permission.GRAPH_READ, tenant)
         parsed_relation = None
         if relation:
             try:
@@ -492,27 +727,41 @@ def create_enterprise_app(
                 raise HTTPException(
                     status_code=400, detail=f"unknown org relation {relation!r}"
                 ) from exc
-        return [
-            _org_edge_out(item)
-            for item in _store().list_org_edges(tenant, relation=parsed_relation)
-        ]
+        return paginate(
+            [_org_edge_out(item) for item in _store().list_org_edges(tenant, relation=parsed_relation)],
+            page,
+        )
 
     @app.get("/api/v1/org-edges/{edge_id}", response_model=OrgEdgeOut, tags=["org-edges"])
     def get_org_edge(
         edge_id: str,
-        x_tenant_id: Annotated[str | None, Header(alias=TENANT_HEADER)] = None,
+        request: Request,
+        principal: Annotated[Principal, Depends(current_principal)],
+        tenant: Annotated[TenantId, Depends(tenant_scope)],
     ) -> OrgEdgeOut:
-        tenant = _require_tenant_header(x_tenant_id)
+        guard(request, ctx, principal, Permission.GRAPH_READ, tenant)
         return _org_edge_out(_store().get_org_edge(tenant, OrgEdgeId(tenant, edge_id)))
 
     @app.delete("/api/v1/org-edges/{edge_id}", status_code=204, tags=["org-edges"])
     def delete_org_edge(
         edge_id: str,
-        x_tenant_id: Annotated[str | None, Header(alias=TENANT_HEADER)] = None,
+        request: Request,
+        principal: Annotated[Principal, Depends(current_principal)],
+        tenant: Annotated[TenantId, Depends(tenant_scope)],
     ) -> None:
-        tenant = _require_tenant_header(x_tenant_id)
+        guard(request, ctx, principal, Permission.GRAPH_WRITE, tenant)
         _store().delete_org_edge(tenant, OrgEdgeId(tenant, edge_id))
+        ctx.audit.record(
+            tenant_id=tenant.value,
+            principal=principal,
+            action="org_edge.delete",
+            category=AuditCategory.RESOURCE_DELETE,
+            resource_type="org_edge",
+            resource_id=edge_id,
+            request_id=request_id_of(request),
+        )
 
+    # ----------------------------------------------------------- declarations
     def _put_declaration(
         tenant: TenantId,
         population: Population,
@@ -538,9 +787,11 @@ def create_enterprise_app(
     )
     def create_population_declaration(
         payload: PopulationDeclarationIn,
-        x_tenant_id: Annotated[str | None, Header(alias=TENANT_HEADER)] = None,
+        request: Request,
+        principal: Annotated[Principal, Depends(current_principal)],
+        tenant: Annotated[TenantId, Depends(tenant_scope)],
     ) -> dict[str, Any]:
-        tenant = _require_tenant_header(x_tenant_id)
+        guard(request, ctx, principal, Permission.POPULATION_WRITE, tenant)
         organization_id = _resolve_organization_id(
             _store(), tenant, payload.organization_id
         )
@@ -554,7 +805,18 @@ def create_enterprise_app(
             target_size=payload.target_size,
         )
         stored_pop = _store().put_population(population)
-        return _put_declaration(tenant, stored_pop, payload)
+        result = _put_declaration(tenant, stored_pop, payload)
+        ctx.audit.record(
+            tenant_id=tenant.value,
+            principal=principal,
+            action="population_declaration.create",
+            category=AuditCategory.RESOURCE_CREATE,
+            resource_type="population",
+            resource_id=stored_pop.id.value,
+            request_id=request_id_of(request),
+            details={"target_size": payload.target_size, "backend": payload.backend},
+        )
+        return result
 
     @app.put(
         "/api/v1/populations/{population_id}/declaration",
@@ -563,13 +825,25 @@ def create_enterprise_app(
     def put_population_declaration(
         population_id: str,
         payload: PopulationDeclarationIn,
-        x_tenant_id: Annotated[str | None, Header(alias=TENANT_HEADER)] = None,
+        request: Request,
+        principal: Annotated[Principal, Depends(current_principal)],
+        tenant: Annotated[TenantId, Depends(tenant_scope)],
     ) -> dict[str, Any]:
-        tenant = _require_tenant_header(x_tenant_id)
+        guard(request, ctx, principal, Permission.POPULATION_WRITE, tenant)
         population = _store().get_population(
             tenant, PopulationId(tenant, population_id)
         )
-        return _put_declaration(tenant, population, payload)
+        result = _put_declaration(tenant, population, payload)
+        ctx.audit.record(
+            tenant_id=tenant.value,
+            principal=principal,
+            action="population_declaration.replace",
+            category=AuditCategory.RESOURCE_MUTATE,
+            resource_type="population",
+            resource_id=population.id.value,
+            request_id=request_id_of(request),
+        )
+        return result
 
     @app.get(
         "/api/v1/populations/{population_id}/declaration",
@@ -577,15 +851,30 @@ def create_enterprise_app(
     )
     def get_population_declaration(
         population_id: str,
-        x_tenant_id: Annotated[str | None, Header(alias=TENANT_HEADER)] = None,
+        request: Request,
+        principal: Annotated[Principal, Depends(current_principal)],
+        tenant: Annotated[TenantId, Depends(tenant_scope)],
     ) -> dict[str, Any]:
-        tenant = _require_tenant_header(x_tenant_id)
+        guard(request, ctx, principal, Permission.POPULATION_READ, tenant)
         declaration = _store().get_population_declaration(
             tenant, PopulationId(tenant, population_id)
         )
         return declaration.to_dict()
 
+    _include_routers(app)
     return app
+
+
+def mount_enterprise_api(host_app: FastAPI, *, context: EnterpriseContext | None = None) -> FastAPI:
+    """Mount the enterprise app under the Playground backend (same origin).
+
+    Requests to ``/api/v1/*``, ``/health`` and ``/ready`` of the mounted app are
+    reachable at ``/enterprise/...`` on the host app; the Playground routes stay
+    untouched.
+    """
+    enterprise = create_enterprise_app(context=context)
+    host_app.mount("/enterprise", enterprise, name="enterprise")
+    return enterprise
 
 
 app = create_enterprise_app()

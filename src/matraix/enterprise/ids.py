@@ -40,6 +40,34 @@ class EntityKind(str, Enum):
     POLICY = "policy"
     ARTIFACT = "artifact"
     ORG_EDGE = "org_edge"
+    # Phase 1+ kinds (additive)
+    WORKSPACE = "workspace"
+    SERVICE_ACCOUNT = "service_account"
+    ROLE = "role"
+    ROLE_BINDING = "role_binding"
+    POPULATION_VERSION = "population_version"
+    PERSONA_SNAPSHOT = "persona_snapshot"
+    ORG_NODE = "org_node"
+    EXPERIMENT_VERSION = "experiment_version"
+    EVALUATION_SUITE = "evaluation_suite"
+    RUN = "run"
+    TRIAL = "trial"
+    METRIC_DEFINITION = "metric_definition"
+    METRIC_OBSERVATION = "metric_observation"
+    DATASET_REFERENCE = "dataset_reference"
+    MODEL_CONFIGURATION = "model_configuration"
+    MODEL_POLICY = "model_policy"
+    EXECUTION_POLICY = "execution_policy"
+    BUDGET = "budget"
+    QUOTA = "quota"
+    APPROVAL = "approval"
+    AUDIT_EVENT = "audit_event"
+    WORK_SHARD = "work_shard"
+    WORK_ITEM = "work_item"
+    AGENT_STATE = "agent_state"
+    REPORT = "report"
+    IDEMPOTENCY_KEY = "idempotency_key"
+    SIMULATION = "simulation"
 
 
 _KIND_PREFIX: dict[EntityKind, str] = {
@@ -60,6 +88,33 @@ _KIND_PREFIX: dict[EntityKind, str] = {
     EntityKind.POLICY: "pol",
     EntityKind.ARTIFACT: "art",
     EntityKind.ORG_EDGE: "edg",
+    EntityKind.WORKSPACE: "wks",
+    EntityKind.SERVICE_ACCOUNT: "sva",
+    EntityKind.ROLE: "rol",
+    EntityKind.ROLE_BINDING: "rbd",
+    EntityKind.POPULATION_VERSION: "pov",
+    EntityKind.PERSONA_SNAPSHOT: "psn",
+    EntityKind.ORG_NODE: "nod",
+    EntityKind.EXPERIMENT_VERSION: "exv",
+    EntityKind.EVALUATION_SUITE: "evs",
+    EntityKind.RUN: "run",
+    EntityKind.TRIAL: "tri",
+    EntityKind.METRIC_DEFINITION: "mdf",
+    EntityKind.METRIC_OBSERVATION: "mob",
+    EntityKind.DATASET_REFERENCE: "dsr",
+    EntityKind.MODEL_CONFIGURATION: "mcf",
+    EntityKind.MODEL_POLICY: "mpl",
+    EntityKind.EXECUTION_POLICY: "xpl",
+    EntityKind.BUDGET: "bud",
+    EntityKind.QUOTA: "quo",
+    EntityKind.APPROVAL: "apv",
+    EntityKind.AUDIT_EVENT: "aud",
+    EntityKind.WORK_SHARD: "shd",
+    EntityKind.WORK_ITEM: "wki",
+    EntityKind.AGENT_STATE: "ast",
+    EntityKind.REPORT: "rpt",
+    EntityKind.IDEMPOTENCY_KEY: "idk",
+    EntityKind.SIMULATION: "sim",
 }
 
 
