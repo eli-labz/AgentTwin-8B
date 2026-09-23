@@ -1,5 +1,10 @@
 # Implementation Roadmap — AgentTwin Enterprise
 
+> **Current state (2026-09-23):** see [IMPLEMENTATION_BASELINE.md](IMPLEMENTATION_BASELINE.md) for
+> the verified baseline and [BUILD_REPORT.md](BUILD_REPORT.md) for what this build delivered.
+> Phases below are numbered against the original roadmap; the build report maps them to the
+> enterprise brief's Phase 0–8 numbering.
+
 Each phase must leave the repository **runnable**: `matraix smoke`, existing Harbor recipes, Playground, and the curated pytest list must keep working. Prefer additive modules over rewrites.
 
 ## Phase 0 — Audit, architecture, domain foundation *(accepted)*
