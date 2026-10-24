@@ -22,6 +22,10 @@ uv run matraix enterprise-api --port 8090
 
 Equivalent: `uvicorn matraix.enterprise.api:app --port 8090`.
 
+The AgentTwin web app is served at `/` (307 → `/app/`) and `/app/`. See
+[webapp.md](webapp.md). It uses the same `/api/v1` routes; no extra backend.
+
+
 ## Authentication and authorization
 
 Providers are tried in order: static local tokens, service accounts (hashed tokens in the store),

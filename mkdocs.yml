@@ -64,6 +64,9 @@ nav:
       - Security model: enterprise/SECURITY_MODEL.md
       - Governance: enterprise/GOVERNANCE.md
       - Implementation roadmap: enterprise/IMPLEMENTATION_ROADMAP.md
+      - API: enterprise/api.md
+      - Web app: enterprise/webapp.md
+      - Population builder: enterprise/population-builder.md
   - ADR:
       - 0001 Platform boundaries: adr/0001-enterprise-platform-boundaries.md
       - 0002 Persistence and record store: adr/0002-persistence-and-record-store.md

@@ -163,6 +163,18 @@ Open **http://localhost:5173** → Playground → pick a persona cohort →
 pick Survey / Chat / Web / OS app tasks → **Lock pipeline** → **Run eval**.
 Details: [Playground §10](docs/quickstart.md#10-playground--play-tasks-visually).
 
+### AgentTwin web app
+
+Control-plane UI for tenant-scoped synthetic workforces. Same-origin with
+`/api/v1`. Does not replace Playground and does not change `matraix run`.
+
+```bash
+uv run matraix enterprise-api --port 8090
+# open http://127.0.0.1:8090/  or  http://127.0.0.1:8090/app/
+```
+
+Details: [docs/enterprise/webapp.md](docs/enterprise/webapp.md).
+
 ### CLI task develop / runs
 
 **Develop** — copy a reference task under `application/tasks/`, edit
@@ -226,6 +238,7 @@ MatrAIx/
 │   └── adapters/            External adapters (e.g. SimpleQA)
 ├── packages/                playground · rewardkit · harbor-langsmith
 ├── apps/viewer/             Frontend paired with `harbor view`
+├── apps/agenttwin/          AgentTwin Enterprise control-plane UI (`/app/`)
 ├── configs/jobs/            Curated & generated Matraix Playground job recipes
 ├── docs/                    Handbook — persona/ · application/ · environment/
 ├── examples/                Minimal example tasks
