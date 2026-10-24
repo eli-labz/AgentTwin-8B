@@ -436,10 +436,10 @@ def main(argv: list[str] | None = None) -> None:
         "enterprise-api",
         help="Serve the Phase 1 /api/v1 enterprise control plane (FastAPI).",
         description=(
-            "Standalone tenant/population/persona API. Does not change "
-            "matraix run defaults. Store: MATRIX_ENTERPRISE_STORE=memory|sqlite "
-            "(MATRIX_ENTERPRISE_DB for the sqlite file). Optional auth: "
-            "MATRIX_ENTERPRISE_API_TOKEN."
+            "Standalone tenant/population/persona API plus the AgentTwin web app "
+            "at / and /app/. Does not change matraix run defaults. Store: "
+            "MATRIX_ENTERPRISE_STORE=memory|sqlite (MATRIX_ENTERPRISE_DB for the "
+            "sqlite file). Optional auth: MATRIX_ENTERPRISE_API_TOKEN."
         ),
     )
     api_parser.add_argument("--host", default="127.0.0.1")

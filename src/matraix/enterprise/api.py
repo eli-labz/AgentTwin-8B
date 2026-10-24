@@ -26,8 +26,11 @@ import logging
 import uuid
 from typing import Annotated, Any
 
+from pathlib import Path
+
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from matraix.enterprise.audit import AuditCategory
@@ -79,9 +82,24 @@ from matraix.enterprise.store import (
 )
 
 API_TOKEN_ENV = "MATRIX_ENTERPRISE_API_TOKEN"
-PUBLIC_PATHS = frozenset({"/docs", "/redoc", "/openapi.json", "/health", "/ready"})
+PUBLIC_PATHS = frozenset(
+    {"/docs", "/redoc", "/openapi.json", "/health", "/ready", "/", "/app"}
+)
 
 logger = logging.getLogger("matraix.enterprise.api")
+
+
+def _agenttwin_webapp_dir() -> Path | None:
+    """Return the AgentTwin SPA directory if this checkout includes it."""
+    bundled = Path(__file__).with_name("webapp")
+    start = Path(__file__).resolve()
+    for parent in (start.parent, *start.parents):
+        candidate = parent / "apps" / "agenttwin"
+        if (candidate / "index.html").is_file():
+            return candidate
+    if (bundled / "index.html").is_file():
+        return bundled
+    return None
 
 
 # --------------------------------------------------------------------------- #
@@ -354,7 +372,11 @@ def _install_middleware(app: FastAPI) -> None:
         ctx: EnterpriseContext = request.app.state.context
         path = request.url.path
         request.state.principal = None
-        if path not in PUBLIC_PATHS and not path.startswith("/docs"):
+        if (
+            path not in PUBLIC_PATHS
+            and not path.startswith("/docs")
+            and not path.startswith("/app/")
+        ):
             try:
                 principal = ctx.auth.authenticate(request.headers)
             except AuthenticationError as exc:
@@ -862,7 +884,29 @@ def create_enterprise_app(
         return declaration.to_dict()
 
     _include_routers(app)
+    _mount_agenttwin_webapp(app)
     return app
+
+
+def _mount_agenttwin_webapp(app: FastAPI) -> None:
+    webapp = _agenttwin_webapp_dir()
+    if webapp is None:
+        logger.warning("AgentTwin web app not found; / and /app will 404")
+
+        @app.get("/", include_in_schema=False)
+        def _missing_root() -> JSONResponse:
+            return JSONResponse(
+                status_code=404,
+                content={"detail": "AgentTwin web app is not packaged in this install"},
+            )
+
+        return
+
+    @app.get("/", include_in_schema=False)
+    def _root_to_app() -> RedirectResponse:
+        return RedirectResponse(url="/app/", status_code=307)
+
+    app.mount("/app", StaticFiles(directory=str(webapp), html=True), name="agenttwin")
 
 
 def mount_enterprise_api(host_app: FastAPI, *, context: EnterpriseContext | None = None) -> FastAPI:

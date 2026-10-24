@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AgentTwin</title>
+  <link rel="stylesheet" href="/app/app.css" />
+</head>
+<body>
+  <div id="shell">
+    <aside id="sidebar">
+      <a class="brand" href="#/home">
+        <span class="mark">AT</span>
+        <span>
+          <strong>AgentTwin</strong>
+          <small>on MatrAIx</small>
+        </span>
+      </a>
+      <nav id="nav"></nav>
+      <div class="sidebar-foot">
+        <p class="policy">Default policy <code>SANDBOX_ONLY</code></p>
+        <p class="hint">Synthetic users are not human research.</p>
+      </div>
+    </aside>
+    <div id="main-col">
+      <header id="topbar">
+        <button type="button" id="menu-btn" aria-label="Open navigation">Menu</button>
+        <div id="whoami" class="whoami">Connecting…</div>
+        <div class="top-actions">
+          <label class="sr-only" for="tenant-select">Tenant</label>
+          <select id="tenant-select"></select>
+          <a class="ghost" href="/docs" target="_blank" rel="noreferrer">API</a>
+        </div>
+      </header>
+      <div id="banner" class="banner" hidden></div>
+      <main id="view"></main>
+    </div>
+  </div>
+  <script src="/app/app.js"></script>
+</body>
+</html>
